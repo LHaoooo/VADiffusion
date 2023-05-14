@@ -87,7 +87,7 @@ def evaluate(args, ckpt_path, testset_yuvroot,testset_mvroot,dataloader_test,bes
     frame_scores=[]
     for k in range(len(video_list)):
         m=[0 for i in range((METADATA[dataset_name]["testing_frames_cnt"])[k])] # 给测试视频每一帧打分为0
-        frame_scores.append(m)
+        frame_scores.append(m)  # 每一个视频的每一帧都是0
     
     for ii, test_data in tqdm(enumerate(dataloader_test), desc="Eval: ", total=len(dataloader_test)):
         _, sample_mvs_test,pred_frame_test,v_name,_= test_data
@@ -100,13 +100,14 @@ def evaluate(args, ckpt_path, testset_yuvroot,testset_mvroot,dataloader_test,bes
         # anomaly scores for each sample
         for i in range(len(scores)):
             video_index=video_list.index(v_name[i])
-            frame_scores[video_index][pred_frame_test[i]] = scores[i] ##the score of corresponding frame
-    
+            frame_scores[video_index][pred_frame_test[i]] = scores[i] ##the score of corresponding frame 重构MV是5个GOP中的最后一个GOP的MV，所以把这个分数传给最后一个GOP的I帧
+            # 也就是分数只有5,9,13,17这些帧有
+
     frame_scores2=[]
     for k in range(len(video_list)):
-        index=np.flatnonzero(frame_scores[k])##the index of no-zero 每个测试视频中MSE不是0的帧
+        index=np.flatnonzero(frame_scores[k])##the index of no-zero 每个测试视频中MSE不是0的帧 也就是上面那些赋值了的I帧
         score_list=[frame_scores[k][j] for j in index]
-        score_list_final=frame_level_result(score_list)##The score of unsampled frames is the average of two adjacent sampled frames
+        score_list_final=frame_level_result(score_list)##The score of unsampled frames is the average of two adjacent sampled frames  给5,9,13,17之间的帧赋值，即6，7,8
         frame_scores[k][index[0]:index[-1]+1]=score_list_final  # 把分数赋给所有帧
         frame_scores2.append([score_list_final,index[0],index[-1]])
 

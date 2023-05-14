@@ -100,9 +100,15 @@ def main():
     trainset_mvroot = os.path.join(args.dataset_base_dir,  "trainmv_txt/")
     testset_mvroot = os.path.join(args.dataset_base_dir,  "testmv_txt/")
 
-    dataset = VideoDataset(args.ImgChnNum, args.sampled_mv_num, trainset_yuvroot, trainset_mvroot, last_mv = True)
+    # trainset_yuvroot = os.path.join(args.dataset_base_dir, "train19_recyuv/")
+    # testset_yuvroot = os.path.join(args.dataset_base_dir, "test19_recyuv/")
+
+    # trainset_mvroot = os.path.join(args.dataset_base_dir,  "trainmv_txt/")
+    # testset_mvroot = os.path.join(args.dataset_base_dir,  "testmv_txt/")
+
+    dataset = VideoDataset(args.ImgChnNum, args.sampled_mv_num, trainset_yuvroot, trainset_mvroot, last_mv = True)  # 第一次用的是TRUE
     dataloader = DataLoader(dataset=dataset, batch_size=batch_size, num_workers=num_workers, shuffle=True)
-    dataset_test = VideoDataset(args.ImgChnNum, args.sampled_mv_num, testset_yuvroot, testset_mvroot, last_mv = True)
+    dataset_test = VideoDataset(args.ImgChnNum, args.sampled_mv_num, testset_yuvroot, testset_mvroot, last_mv = True)# 第一次训练用的是TRUE
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=128, num_workers=num_workers, shuffle=False)
 
     for epoch in range(epoch_last, epochs + epoch_last):  
@@ -112,6 +118,7 @@ def main():
             model.train()
 
             _, sample_mvs,_,_,_ = train_data
+            # print(sample_mvs.shape) # 128*6*64*64 在训练的时候进行单个mv的重构，这样效果更好，在最后整体的模型中先挨个重建，再进行4个组合
             sample_mvs = sample_mvs.to(device)
 
             mv_target,out = model(sample_mvs)
@@ -178,8 +185,10 @@ def create_argparser():
     defaults = dict(
         # model settings
         motion_channels = 2,
+        # motion_channels = 8,
         sampled_mv_num = 3,  # the num of sampled mv in one GOP
-        ImgChnNum =  1, # channel of I frame
+        ImgChnNum =  1, # channel of I frame UCSD
+        # ImgChnNum =  3, # channel of I frame AVe
         num_mvs = 1,
         feature_root = 16,
         skip_conn = True,
@@ -187,14 +196,18 @@ def create_argparser():
         #skip_ops = [ "none", "concat", "concat","concat"],
 
         # exp settings
-        dataset_base_dir =  "/home/Dataset/UCSD_ped/UCSD_ped2",
+        dataset_base_dir =  "/home/Dataset/UCSD_ped/UCSD_ped2",  # UCSD_ped2
+        # dataset_base_dir =  "/home/Dataset/Avenue",  # Avenue
         gt_dir = "data",
 
-        dataset_name = "UCSD_ped2",
         ckpt_root = "mv_ckpt",
-        # exp_name =  "UCSD_ped2_mv_recon",  # MV plus
-        exp_name = "UCSD_ped2_mv_recon_stack_4gpu_lr0.005",  # MV stack
         log_root = "log",
+
+        dataset_name = "UCSD_ped2",
+        # exp_name =  "UCSD_ped2_mv_recon",  # MV plus
+        exp_name = "UCSD_ped2_mv_recon_stack_mvtruetest_4gpu_lr0.005",  # MV stack
+        # dataset_name = "avenue",
+        # exp_name = "avenue_mv_recon_4gpu_lr0.02",  # MV stack
 
         eval_root = "eval",
         device_ids = "3,4,6,7",

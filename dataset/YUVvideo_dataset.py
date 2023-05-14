@@ -113,10 +113,10 @@ class VideoDataset(Dataset):
             self._input_mean = torch.from_numpy(
                 np.array([0.408, 0.502, 0.502]).reshape((1, 3, 1, 1))).float()
             self._input_std = torch.from_numpy(
-                np.array([0.248, 0.028, 0.028]).reshape((1, 3, 1, 1))).float()
+                np.array([0.248, 0.028, 0.028]).reshape((1, 3, 1, 1))).float()  # 进行Avuene数据集的均值标准差设定
         elif self.ImgChnNum==1:
             self._input_mean=torch.from_numpy(np.array([0.446])).float()
-            self._input_std=torch.from_numpy(np.array([0.179])).float()
+            self._input_std=torch.from_numpy(np.array([0.179])).float()  # 进行UCSD数据集的均值标准差设定
         # dir name
         self.video_root = video_root
         self.mv_root=mv_root
@@ -124,7 +124,7 @@ class VideoDataset(Dataset):
         self.video_list = [name for name in os.listdir(self.video_root)]
         self.video_list.sort()
 
-        self.video_clip_list=[]
+        self.video_clip_list=[]  # 存放的GOP的I帧的idx
         self.video_yuv=[]##每个视频的名字和yuv分量
         width,height=256,256
         
@@ -135,7 +135,7 @@ class VideoDataset(Dataset):
             
             file_size = os.path.getsize(v_path)
             if self.ImgChnNum==1:
-                frame_num=file_size // (width*height)###yuv400每1个像素对应1个值
+                frame_num=file_size // (width*height)###yuv400每1个像素对应1个值  计算帧数
             else:
                 frame_num=file_size // (width*height*3 // 2)###yuv420每4个像素对应6个值
 
@@ -147,30 +147,30 @@ class VideoDataset(Dataset):
                 x_txt=video_name[0:-4]+'/'+str(k).zfill(5)+'_x.txt'
                 y_txt=video_name[0:-4]+'/'+str(k).zfill(5)+'_y.txt'
                 MV=readmv(self.mv_root,x_txt,y_txt)
-                MV_data.append(MV)
+                MV_data.append(MV)  # 挨个存放每一帧MV
             
             #####读取I帧数据
             yuv_data=readYuvFile(v_path,width,height,frame_num,self.ImgChnNum)
             
             self.video_yuv.append([video_name,yuv_data,MV_data])
-            if frame_num<self.clip_length*self.interval:
+            if frame_num<self.clip_length*self.interval:  # 5*4=20 5个GOP，4个GOP的Iframe去预测第五个GOP的Iframe  如果视频小于5*GOP则报错
                 print("The video %s have no enough frames" %video_name)
                 continue
             else:
                 frame_begain_idx=1
                 while True:
-                    frame_end_idx=frame_begain_idx+((self.clip_length-1)*self.interval)
+                    frame_end_idx=frame_begain_idx+((self.clip_length-1)*self.interval)  # 1+4*4=17
                     if frame_end_idx>frame_num:
                         break
                     if frame_num-frame_end_idx>=self.sampled_mv_num:  #make sure the num of P frame in the last GOP >= sampled_mv_num
-                        frame_idx=[k for k in range(frame_begain_idx, frame_end_idx+1, self.interval)]
+                        frame_idx=[k for k in range(frame_begain_idx, frame_end_idx+1, self.interval)] # 1,5,9,13,17——>5,9,13,17,21
                         #print(frame_idx)
-                        self.video_clip_list.append([video_name,frame_idx])
-                        frame_begain_idx=frame_begain_idx+self.time_step
+                        self.video_clip_list.append([video_name,frame_idx])  # 把5个GOP当做一个video clip 存入
+                        frame_begain_idx=frame_begain_idx+self.time_step  # 以5个GOP为滑动窗口大小，每次滑动一个GOP 1——>5——>9
                     else:
                         break         
         self.idx_num = len(self.video_clip_list)
-        print("%d clips load" %self.idx_num)
+        print("%d clips load" %self.idx_num)  # 一个clip是5个GOP
         self.use_cuda = use_cuda
         self.transform = transform
         self.num_predicted_frame=1##预测帧的个数
@@ -182,7 +182,7 @@ class VideoDataset(Dataset):
     def __getitem__(self, item):
         
         """ get a video clip with stacked frames indexed by the (idx) """
-        clip_path = self.video_clip_list[item] # idx file path
+        clip_path = self.video_clip_list[item] # idx file path  [video_name,frame_idx]
         v_name = clip_path[0]  # video name
         frame_idx = clip_path[1]  # frame index list for a video clip
         # pred_frame_test=(np.array(frame_idx[-self.num_predicted_frame:])-1).tolist()#预测帧的序号，frame_idx的最后一个
@@ -193,7 +193,8 @@ class VideoDataset(Dataset):
             if self.video_yuv[k][0]==v_name:
                 yuv=self.video_yuv[k][1]
                 MV_data=self.video_yuv[k][2]
-        ##I帧
+    
+        ##I帧  取出5个GOP的
         #pdb.set_trace()
         frames = []
         for k in range(len(frame_idx)):
@@ -222,14 +223,14 @@ class VideoDataset(Dataset):
         output_frames=change_shape(output_frames)
 
         # MV
-        MVs = []
+        MVs = []  # 5个GOP的所有MV（stack态）
 
         # MV stack in channel
         for k in range(len(frame_idx)):
             #pdb.set_trace()
             sample_mv= np.zeros((64, 64, 2*self.sampled_mv_num))           
             for m in range(self.sampled_mv_num):
-                frame_index=frame_idx[k]+m
+                frame_index=frame_idx[k]+m  # 三个P帧
                 mv_img=MV_data[frame_index]
                 #substract mean ,[-20,20]-->[0,255]
                 img_x,img_y=np.split(mv_img,[1],axis=2)                               
@@ -263,16 +264,17 @@ class VideoDataset(Dataset):
         #     MVs.append(sample_mv)
         
         #pdb.set_trace()
-        MVs = np.array(MVs)#T x H x W x C , C=c*sampled_mv_num
-        ##last_mv=True，取最后一个mv，last_mv=False,取前四个，最后一个视为未来帧光流
+        MVs = np.array(MVs)#T x H x W x C , C=c*sampled_mv_num # 现在是5个GOP的MV
+
+        #last_mv=True，取最后一个mv，last_mv=False,取前四个，最后一个视为未来帧光流
         MV = MVs[:-1] if not self.last_mv else MVs[-1:]
         
         mv_last=MVs[-1:][0]#最后一个MV用于计算异常区域,1xHxWxC->HxWxC 64*64*(c*sampled_mv_num)
-        mv_last_final=mv_last[:,:,0:2]
+        mv_last_final=mv_last[:,:,0:2]  # 只取了最后一个MV的前两个channel
         MV = np.transpose(MV, (0, 3, 1, 2))#T x Cx H x W 
         output_MV = torch.from_numpy(MV).float()/ 255.0 #array to tensor
         output_MV = (output_MV - 0.5)
         #T x Cx H x W to [t*c,h,w]
         output_MV=change_shape(output_MV)
         
-        return output_frames,output_MV,pred_frame_test,v_name,mv_last_final
+        return output_frames,output_MV,pred_frame_test,v_name,mv_last_final  # 返回5个GOP所有的I帧，3个P帧的堆叠mv，预测帧的序号，视频名称，最后一个GOP的MV的前两个channel
