@@ -19,7 +19,7 @@ from utils.ncsn_runner import NCSNRunner
 def parse_args_and_config():
     parser = argparse.ArgumentParser(description=globals()['__doc__'])
 
-    parser.add_argument('--config', type=str, default='/home/VADiffusion/configs/smmnist_DDPM_big5.yml',
+    parser.add_argument('--config', type=str, default='/home/VADiffusion/configs/UCSD_ped2_ddpm.yml',
                          required=True, help='Path to the config file')
     parser.add_argument('--data_path', type=str, default='/home/Dataset/UCSD_ped/UCSD_ped2',
                          required=True, help='The basic Path to the dataset')
