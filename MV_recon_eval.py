@@ -1,22 +1,20 @@
+import argparse
 import os
 import torch
 from torch.utils.data import DataLoader
-import cv2
 import torch.nn as nn
 import numpy as np
-import yaml
-import joblib
 import pickle
-import gc
 import numpy as np
-import pdb
 from tqdm import tqdm
-from MV_recon_train import create_model
-
+from utils.train_util import (
+    model_defaults,
+    args_to_dict,
+    add_dict_to_argparser,
+    )
 from dataset.YUVvideo_dataset import VideoDataset
 from models.MV_reconAE import reconAE
 from utils.eval_util import save_evaluation_curves
-from utils.train_util import args_to_dict, model_defaults
 
 METADATA = {
     "UCSD_ped2": {
@@ -57,29 +55,40 @@ def frame_level_result(res_prob_list):
                 res_prob_list_final.append(frame_score)
     return res_prob_list_final
 
+def create_model(
+        motion_channels,
+        sampled_mv_num,
+        num_mvs,
+        feature_root,
+        skip_ops,
+    ):
+        return reconAE(
+            num_in_ch = motion_channels*sampled_mv_num,  # stack MV
+            # num_in_ch = motion_channels,  # plus MV
+            seq_len = num_mvs, 
+            features_root = feature_root, 
+            skip_ops = skip_ops,
+        )
+
 def evaluate(args, ckpt_path, testset_yuvroot,testset_mvroot,dataloader_test,best_auc,suffix):
     dataset_name = args.dataset_name
-    # device_ids = args.device_ids
-
-    # os.environ['CUDA_VISIBLE_DEVICES'] = args.device_ids
-    # if torch.cuda.is_available() is False:
-    #     raise EnvironmentError('not find GPU device for training.')
+    os.environ['CUDA_VISIBLE_DEVICES'] = args.device_ids
     
     device = torch.device("cuda")
-    num_workers = args.num_workers
+    # num_workers = args.num_workers
     eval_dir = os.path.join(args.ckpt_root, args.exp_name, args.eval_root)
 
     os.makedirs(eval_dir, exist_ok=True)
 
     model = create_model(**args_to_dict(args, model_defaults().keys())).to(device).eval()
+    model = nn.DataParallel(model)
 
     # load weights
     model_weights = torch.load(ckpt_path)["model_state_dict"]
-    model.load_state_dict(model_weights, False)
+    model.load_state_dict(model_weights)
     print("load pre-trained success!")
 
     score_func = nn.MSELoss(reduction="none")#no reduction will be applied.(维度不减少)
-
     #anomaly scores for each frame
     video_list = [name for name in os.listdir(testset_yuvroot)]
     video_list.sort()
@@ -152,20 +161,73 @@ def evaluate(args, ckpt_path, testset_yuvroot,testset_mvroot,dataloader_test,bes
 
 
 if __name__ == '__main__':
-    model_save_path = "./multimv_ckpt/avenue_recon_multimv=3_train2/best.pth"
-    cfg_file = "./multimv_ckpt/avenue_recon_multimv=3_train2/log/recon_cfg.yaml"
-    config = yaml.safe_load(open(cfg_file))
-    
-    
-    dataset_name = config["dataset_name"]
-    dataset_base_dir = config["dataset_base_dir"]
-    num_workers = config["num_workers"]
-    best_auc=0
-    
-    testset_yuvroot=os.path.join(dataset_base_dir,  "test19_recyuv/")
-    testset_mvroot=os.path.join(dataset_base_dir,  "test19mv_txt/")
-    dataset_test = VideoDataset(config["model_paras"]["ImgChnNum"],config["model_paras"]["sampled_mv_num"],testset_yuvroot,testset_mvroot, last_mv=True)
-    dataloader_test = DataLoader(dataset=dataset_test, batch_size=128, num_workers=num_workers, shuffle=False)
+    def create_argparser():
+        defaults = dict(
+            # model settings
+            motion_channels = 2,  # MV data channel
+            # motion_channels = 8,  # 4 MV
+            sampled_mv_num = 3,  # the num of sampled mv in one GOP
+            ImgChnNum =  1, # channel of I frame UCSD
+            # ImgChnNum =  3, # channel of I frame AVe
+            num_mvs = 1,
+            feature_root = 16,
+            skip_conn = True,
+            skip_ops = ["none", "none", "none","none"],
+            #skip_ops = [ "none", "concat", "concat","concat"],
+
+            # exp settings
+            dataset_base_dir =  "/home/Dataset/UCSD_ped/UCSD_ped2",  # UCSD_ped2
+            # dataset_base_dir =  "/home/Dataset/Avenue",  # Avenue
+            gt_dir = "data",
+
+            ckpt_root = "mv_ckpt",
+            log_root = "log",
+
+            dataset_name = "UCSD_ped2",
+            exp_name =  "UCSD_ped2_mv_recon_stack_mv_eval_1111test",  # MV stack
+            # exp_name =  "UCSD_ped2_mv_recon",  # MV plus
+            # exp_name = "UCSD_ped2_mv_recon_stack_mvtruetest_4gpu_lr0.005",  # MV stack
+            # dataset_name = "avenue",
+            # exp_name = "avenue_mv_recon_4gpu_lr0.02",  # MV stack
+
+            eval_root = "eval",
+            device_ids = "3",
+            seed = 1111,
+
+            pretrained =  False,
+            # pretrained = "/home/VADiffusion/mv_ckpt/UCSD_ped2_mv_recon_stack2/stackbest.pth",
+            model_savename = "mv_model",
+
+            logevery = 100 , # num of iterations to log
+            saveevery = 1 , # num of epoch to save models
+
+            # training setting
+            num_epochs = 100,
+            batch_size = 32,
+            lr = 0.005,
+            num_workers = 0,
+        )
+        parser = argparse.ArgumentParser()
+        add_dict_to_argparser(parser, defaults)
+        return parser
+
+    args = create_argparser().parse_args()
+
+    os.environ['PYTHONHASHSEED'] = str(args.seed)  # 为了禁止hash随机化，使得实验可复现。
+    torch.manual_seed(args.seed)     # 为CPU设置随机种子
+    torch.cuda.manual_seed_all(args.seed)   # 为所有GPU设置随机种子（多块GPU）
+    # np.random.seed(seed)  # Numpy module.
+    # random.seed(seed)  # Python random module.
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+
+    best_auc = -1
+    model_save_path = "//home/VADiffusion/mv_ckpt/UCSD_ped2_mv_recon_stack_mv_1111/stackbest.pth"
+    testset_yuvroot=os.path.join(args.dataset_base_dir,  "test_recyuv400/")
+    testset_mvroot=os.path.join(args.dataset_base_dir,  "testmv_txt/")
+
+    dataset_test = VideoDataset(args.ImgChnNum, args.sampled_mv_num, testset_yuvroot, testset_mvroot, last_mv=True)
+    dataloader_test = DataLoader(dataset=dataset_test, batch_size=128, num_workers=args.num_workers, shuffle=False)
     with torch.no_grad():
-        auc = evaluate(config, model_save_path,testset_yuvroot,testset_mvroot,dataloader_test,best_auc,suffix="best") 
+        auc = evaluate(args, model_save_path,testset_yuvroot,testset_mvroot,dataloader_test,best_auc,suffix="best") 
         print(auc)

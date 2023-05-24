@@ -117,8 +117,9 @@ def main():
                                   desc="Training Epoch %d" % (epoch + 1),total=len(dataloader)):
             model.train()
 
-            _, sample_mvs,_,_,_ = train_data
-            # print(sample_mvs.shape) # 128*6*64*64 在训练的时候进行单个mv的重构，这样效果更好，在最后整体的模型中先挨个重建，再进行4个组合
+            sample_frames, sample_mvs,_,_,_ = train_data
+            print(sample_frames.shape)
+            print(sample_mvs.shape) # 128*6*64*64 在训练的时候进行单个mv的重构，这样效果更好，在最后整体的模型中先挨个重建，再进行4个组合
             sample_mvs = sample_mvs.to(device)
 
             mv_target,out = model(sample_mvs)
@@ -184,8 +185,8 @@ def main():
 def create_argparser():
     defaults = dict(
         # model settings
-        motion_channels = 2,
-        # motion_channels = 8,
+        motion_channels = 2,  # MV data channel
+        # motion_channels = 8,  # 4 MV
         sampled_mv_num = 3,  # the num of sampled mv in one GOP
         ImgChnNum =  1, # channel of I frame UCSD
         # ImgChnNum =  3, # channel of I frame AVe
@@ -205,13 +206,13 @@ def create_argparser():
 
         dataset_name = "UCSD_ped2",
         # exp_name =  "UCSD_ped2_mv_recon",  # MV plus
-        exp_name = "UCSD_ped2_mv_recon_stack_mvtruetest_4gpu_lr0.005",  # MV stack
+        exp_name = "UCSD_ped2_mv_recon_stack_mv_123456",  # MV stack
         # dataset_name = "avenue",
         # exp_name = "avenue_mv_recon_4gpu_lr0.02",  # MV stack
 
         eval_root = "eval",
-        device_ids = "3,4,6,7",
-        seed = 114514,
+        device_ids = "1",
+        seed = 123456,
 
         pretrained =  False,
         # pretrained = "/home/VADiffusion/mv_ckpt/UCSD_ped2_mv_recon_stack2/stackbest.pth",
@@ -224,7 +225,7 @@ def create_argparser():
         num_epochs = 100,
         batch_size = 32,
         lr = 0.005,
-        num_workers = 8,
+        num_workers = 0,
     )
     parser = argparse.ArgumentParser()
     add_dict_to_argparser(parser, defaults)
