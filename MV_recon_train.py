@@ -94,17 +94,17 @@ def main():
 
     # Training
     best_auc = -1
-    trainset_yuvroot = os.path.join(args.dataset_base_dir, "train_recyuv400/")
-    testset_yuvroot = os.path.join(args.dataset_base_dir, "test_recyuv400/")
-
-    trainset_mvroot = os.path.join(args.dataset_base_dir,  "trainmv_txt/")
-    testset_mvroot = os.path.join(args.dataset_base_dir,  "testmv_txt/")
-
-    # trainset_yuvroot = os.path.join(args.dataset_base_dir, "train19_recyuv/")
-    # testset_yuvroot = os.path.join(args.dataset_base_dir, "test19_recyuv/")
+    # trainset_yuvroot = os.path.join(args.dataset_base_dir, "train_recyuv400/")
+    # testset_yuvroot = os.path.join(args.dataset_base_dir, "test_recyuv400/")
 
     # trainset_mvroot = os.path.join(args.dataset_base_dir,  "trainmv_txt/")
     # testset_mvroot = os.path.join(args.dataset_base_dir,  "testmv_txt/")
+
+    trainset_yuvroot = os.path.join(args.dataset_base_dir, "train19_recyuv/")
+    testset_yuvroot = os.path.join(args.dataset_base_dir, "test19_recyuv/")
+
+    trainset_mvroot = os.path.join(args.dataset_base_dir,  "trainmv_txt/")
+    testset_mvroot = os.path.join(args.dataset_base_dir,  "testmv_txt/")
 
     dataset = VideoDataset(args.ImgChnNum, args.sampled_mv_num, trainset_yuvroot, trainset_mvroot, last_mv = True)  # 第一次用的是TRUE
     dataloader = DataLoader(dataset=dataset, batch_size=batch_size, num_workers=num_workers, shuffle=True)
@@ -188,8 +188,8 @@ def create_argparser():
         motion_channels = 2,  # MV data channel
         # motion_channels = 8,  # 4 MV
         sampled_mv_num = 3,  # the num of sampled mv in one GOP
-        ImgChnNum =  1, # channel of I frame UCSD
-        # ImgChnNum =  3, # channel of I frame AVe
+        # ImgChnNum =  1, # channel of I frame UCSD
+        ImgChnNum =  3, # channel of I frame AVe
         num_mvs = 1,
         feature_root = 16,
         skip_conn = True,
@@ -197,32 +197,32 @@ def create_argparser():
         #skip_ops = [ "none", "concat", "concat","concat"],
 
         # exp settings
-        dataset_base_dir =  "/home/Dataset/UCSD_ped/UCSD_ped2",  # UCSD_ped2
-        # dataset_base_dir =  "/home/Dataset/Avenue",  # Avenue
+        # dataset_base_dir =  "/home/Dataset/UCSD_ped/UCSD_ped2",  # UCSD_ped2
+        dataset_base_dir =  "/home/Dataset/Avenue",  # Avenue
         gt_dir = "data",
 
         ckpt_root = "mv_ckpt",
         log_root = "log",
 
-        dataset_name = "UCSD_ped2",
+        # dataset_name = "UCSD_ped2",
         # exp_name =  "UCSD_ped2_mv_recon",  # MV plus
-        exp_name = "UCSD_ped2_mv_recon_stack_mv_123456",  # MV stack
-        # dataset_name = "avenue",
-        # exp_name = "avenue_mv_recon_4gpu_lr0.02",  # MV stack
+        # exp_name = "UCSD_ped2_mv_recon_stack_mv_123456",  # MV stack
+        dataset_name = "avenue",
+        exp_name = "avenue_mv_recon_stack_mv_123456_pretrain",  # MV stack
 
         eval_root = "eval",
         device_ids = "1",
         seed = 123456,
 
-        pretrained =  False,
-        # pretrained = "/home/VADiffusion/mv_ckpt/UCSD_ped2_mv_recon_stack2/stackbest.pth",
+        # pretrained =  False,
+        pretrained = "/home/VADiffusion/mv_ckpt/avenue_mv_recon_stack_mv_123456/stackbest.pth",
         model_savename = "mv_model",
 
         logevery = 100 , # num of iterations to log
         saveevery = 1 , # num of epoch to save models
 
         # training setting
-        num_epochs = 100,
+        num_epochs = 200,
         batch_size = 32,
         lr = 0.005,
         num_workers = 0,

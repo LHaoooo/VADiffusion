@@ -105,13 +105,13 @@ def evaluate(args, ckpt_path, testset_yuvroot,testset_mvroot,dataloader_test,bes
         mv_target_test,out_test = model(sample_mvs_test)
         loss_of_test = score_func(out_test, mv_target_test).cpu().data.numpy()
         scores = np.sum(np.sum(np.sum(loss_of_test, axis=3), axis=2), axis=1)  # 这个scores是关于MV重构误差的
-
+        print(len(scores))
         # anomaly scores for each sample
         for i in range(len(scores)):
             video_index=video_list.index(v_name[i])
             frame_scores[video_index][pred_frame_test[i]] = scores[i] ##the score of corresponding frame 重构MV是5个GOP中的最后一个GOP的MV，所以把这个分数传给最后一个GOP的I帧
             # 也就是分数只有5,9,13,17这些帧有
-
+    print(frame_scores)
     frame_scores2=[]
     for k in range(len(video_list)):
         index=np.flatnonzero(frame_scores[k])##the index of no-zero 每个测试视频中MSE不是0的帧 也就是上面那些赋值了的I帧
@@ -184,15 +184,15 @@ if __name__ == '__main__':
             log_root = "log",
 
             dataset_name = "UCSD_ped2",
-            exp_name =  "UCSD_ped2_mv_recon_stack_mv_eval_1111test",  # MV stack
+            exp_name =  "UCSD_ped2_mv_recon_stack_mv_eval2_123456",  # MV stack
             # exp_name =  "UCSD_ped2_mv_recon",  # MV plus
             # exp_name = "UCSD_ped2_mv_recon_stack_mvtruetest_4gpu_lr0.005",  # MV stack
             # dataset_name = "avenue",
-            # exp_name = "avenue_mv_recon_4gpu_lr0.02",  # MV stack
+            # exp_name = "avenue_mv_recon_eval_123456",  # MV stack
 
             eval_root = "eval",
-            device_ids = "3",
-            seed = 1111,
+            device_ids = "2,3",
+            seed = 123456,
 
             pretrained =  False,
             # pretrained = "/home/VADiffusion/mv_ckpt/UCSD_ped2_mv_recon_stack2/stackbest.pth",
@@ -222,9 +222,12 @@ if __name__ == '__main__':
     torch.backends.cudnn.deterministic = True
 
     best_auc = -1
-    model_save_path = "//home/VADiffusion/mv_ckpt/UCSD_ped2_mv_recon_stack_mv_1111/stackbest.pth"
+    model_save_path = "/home/VADiffusion/mv_ckpt/UCSD_ped2_mv_recon_stack_mv_123456/stackbest.pth"
     testset_yuvroot=os.path.join(args.dataset_base_dir,  "test_recyuv400/")
     testset_mvroot=os.path.join(args.dataset_base_dir,  "testmv_txt/")
+
+    # testset_yuvroot = os.path.join(args.dataset_base_dir, "test19_recyuv/")
+    # testset_mvroot = os.path.join(args.dataset_base_dir,  "testmv_txt/")
 
     dataset_test = VideoDataset(args.ImgChnNum, args.sampled_mv_num, testset_yuvroot, testset_mvroot, last_mv=True)
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=128, num_workers=args.num_workers, shuffle=False)

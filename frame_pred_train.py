@@ -12,7 +12,7 @@ import os,torch,xlwt
 import time,datetime
 import logging,yaml,sys,glob,shutil
 import numpy as np
-import torch.utils.tensorboard as tb
+# import torch.utils.tensorboard as tb
 
 from utils.ncsn_runner import NCSNRunner
 
@@ -20,13 +20,13 @@ def parse_args_and_config():
     parser = argparse.ArgumentParser(description=globals()['__doc__'])
 
     parser.add_argument('--config', type=str, default='/home/VADiffusion/configs/UCSD_ped2_ddpm.yml',
-                         required=True, help='Path to the config file')
+                        help='Path to the config file')
     parser.add_argument('--data_path', type=str, default='/home/Dataset/UCSD_ped/UCSD_ped2',
-                         required=True, help='The basic Path to the dataset')
-    parser.add_argument('--seed', type=int, default=114514, help='Random seed')
-    parser.add_argument('--device_ids', type=str, default='3,4,6,7', help='the ids of devices used')
-    parser.add_argument('--exp', type=str, default='exp', required=True,
-                         help='Path for saving running related data.')
+                        help='The basic Path to the dataset')
+    parser.add_argument('--seed', type=int, default=123456, help='Random seed')
+    parser.add_argument('--device_ids', type=str, default='1,2,3,6', help='the ids of devices used')
+    parser.add_argument('--exp', type=str, default='exp1',
+                         help='Path for saving running related data.Change the name to the different exp')
     parser.add_argument('--comment', type=str, default='', help='A string for experiment comment')
     parser.add_argument('--verbose', type=str, default='info',
                          help='Verbose level: info | debug | warning | critical')
@@ -39,12 +39,11 @@ def parse_args_and_config():
     args = parser.parse_args()
 
     args.command = 'python ' + ' '.join(sys.argv)  # 包含了当前脚本的命令行调用方式及其所有参数，可以进行保存
-    args.log_path = os.path.join(args.exp, 'logs')
-
     # parse config file
     with open(args.config, 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
 
+    args.log_path = os.path.join(args.exp, 'logs', config["training"]["ckpt_dir"])
     # Override with config_mod
     # 当命令行使用了--config时，覆盖config文件中的相关参数
     for val in args.config_mod:
@@ -60,18 +59,6 @@ def parse_args_and_config():
         else:
             config[config_type][config_name] = eval(config_val)
 
-    # Override
-    # if config['data']['dataset'].upper() == "IMAGENET":
-    #     if config['data']['classes'] is None:
-    #         config['data']['classes'] = []
-    #     elif config['data']['classes'] == 'dogs':
-    #         config['data']['classes'] = list(range(151, 269))
-    #     assert isinstance(config['data']['classes'], list), "config['data']['classes'] must be a list!"
-    # config['sampling']['subsample'] = args.subsample or config['sampling'].get('subsample')  # 用args.subsample赋值，如果为None则该值不变
-    # config['fast_fid']['batch_size'] = args.fid_batch_size or config['fast_fid']['batch_size']
-    # config['fast_fid']['num_samples'] = args.fid_num_samples or config['fast_fid']['num_samples']
-    # config['fast_fid']['pr_nn_k'] = args.pr_nn_k or config['fast_fid'].get('pr_nn_k', 3)
-
     if args.no_ema:
         config['model']['ema'] = False
 
@@ -79,17 +66,12 @@ def parse_args_and_config():
         print(" <<<<<<<<<<<<<<<<<<<<<<<<<<<<<< WARNING: Cannot test FVD when sampling.num_frames_pred < 10 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
         config['sampling']['fvd'] =  False
 
-    if config['model'].get('output_all_frames', False): 
-        noise_in_cond = True # if False, then wed predict the input-cond frames z, but the z is zero everywhere which is weird and seems irrelevant to predict. So we stick to the noise_in_cond case.
-
     assert not config['model'].get('cond_emb', False) or (config['model'].get('cond_emb', False) and config['data'].get('prob_mask_cond',0.0) > 0)
 
     if config['data'].get('prob_mask_sync', False):
         assert config['data'].get('prob_mask_cond', 0.0) > 0 and config['data'].get('prob_mask_cond', 0.0) == config['data'].get('prob_mask_future', 0.0)
 
     new_config = dict2namespace(config)
-
-    tb_path = os.path.join(args.exp, 'tensorboard', args.doc)
 
     if args.train:  # train
         if not args.resume_training:  # 无预训练
@@ -100,11 +82,8 @@ def parse_args_and_config():
                     overwrite = True
 
                 if overwrite:  # 覆盖
-                    shutil.rmtree(args.log_path)  # 删除指定目录及其包含的所有文件和子目录。
-                    # shutil.rmtree(tb_path)
+                    shutil.rmtree(args.log_path)  # 删除指定目录及其包含的所有文件和子目录。)
                     os.makedirs(args.log_path)
-                    # if os.path.exists(tb_path):
-                    #     shutil.rmtree(tb_path)
                 else:
                     print("Folder exists. Program halted.")
                     sys.exit(0)
@@ -116,13 +95,6 @@ def parse_args_and_config():
 
             with open(os.path.join(args.log_path, 'args.yml'), 'w') as f:
                 yaml.dump(vars(args), f, default_flow_style=False)  # vars(args)将args对象转换为一个字典
-
-            # Code
-            # code_path = os.path.join(args.exp, 'code')
-            # os.makedirs(code_path, exist_ok=True)
-            # copy_scripts(os.path.dirname(os.path.abspath(__file__)), code_path)
-
-        new_config.tb_logger = tb.SummaryWriter(log_dir=tb_path)
 
         # setup logger
         level = getattr(logging, args.verbose.upper(), None)  # 控制日志级别
@@ -186,37 +158,10 @@ def dict2namespace(config):
         setattr(namespace, key, new_value)
     return namespace
 
-
-# code copy
-# def copy_scripts(src, dst):
-#     print("Copying scripts in", src, "to", dst)
-#     for file in glob.glob(os.path.join(src, '*.sh')) + \
-#             glob.glob(os.path.join(src, '*.py')) + \
-#             glob.glob(os.path.join(src, '*_means.pt')) + \
-#             glob.glob(os.path.join(src, '*.data')) + \
-#             glob.glob(os.path.join(src, '*.cfg')) + \
-#             glob.glob(os.path.join(src, '*.yml')) + \
-#             glob.glob(os.path.join(src, '*.names')):
-#         shutil.copy(file, dst)
-#     for d in glob.glob(os.path.join(src, '*/')):
-#         if '__' not in os.path.basename(os.path.dirname(d)) and \
-#                 '.' not in os.path.basename(os.path.dirname(d))[0] and \
-#                 'ipynb' not in os.path.basename(os.path.dirname(d)) and \
-#                 os.path.basename(os.path.dirname(d)) != 'data' and \
-#                 os.path.basename(os.path.dirname(d)) != 'experiments' and \
-#                 os.path.basename(os.path.dirname(d)) != 'assets':
-#             if os.path.abspath(d) in os.path.abspath(dst):
-#                 continue
-#             print("Copying", d)
-#             # shutil.copytree(d, os.path.join(dst, d))
-#             new_dir = os.path.join(dst, os.path.basename(os.path.normpath(d)))
-#             os.makedirs(new_dir, exist_ok=True)
-#             copy_scripts(d, new_dir)
-
 def main():
     args, config = parse_args_and_config()
     world_size = torch.cuda.device_count()
-    config.trainging.batch_size *= world_size  # 多卡batchsize/lr要是单卡的多倍
+    config.training.batch_size *= world_size  # 多卡batchsize/lr要是单卡的多倍
     config.optim.lr *= world_size
     logging.info("{}".format(args))
     logging.info("Writing log file to {}".format(args.log_path))
@@ -225,8 +170,6 @@ def main():
     logging.info("Config =")
     print(">" * 80)
     config_dict = copy.copy(vars(config))
-    # if not args.test and not args.sample and not args.fast_fid:
-    #     del config_dict['tb_logger']
     print(yaml.dump(config_dict, default_flow_style=False))
     print("<" * 80)
     logging.info("Args =")
@@ -243,9 +186,10 @@ def main():
     try:
         runner = NCSNRunner(args, config,
                             trainset_yuvroot,testset_yuvroot,trainset_mvroot,testset_mvroot)
-        # runner = NCSNRunner(args, config, config_uncond,
-        #                     trainset_yuvroot,testset_yuvroot,trainset_mvroot,testset_mvroot)
-        runner.train()
+        if args.train:
+            runner.train()
+        else:
+            runner.test()
     except:
         logging.error(traceback.format_exc())
     

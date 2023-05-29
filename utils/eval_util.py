@@ -111,3 +111,73 @@ def save_evaluation_curves(args,original_frame_scores,scores, labels, curves_sav
             plt.close()
 
     return auroc
+
+def save_evaluation_curves_pred(original_frame_scores,scores, labels, curves_save_path, video_frame_nums,best_auc):
+    """
+    Draw anomaly score curves for each video and the overall ROC figure.
+    """
+    
+
+    scores = scores.flatten()
+    labels = labels.flatten()
+
+    scores_each_video = {}
+    labels_each_video = {}
+
+    start_idx = 0
+    for video_id in range(len(video_frame_nums)):
+        scores_each_video[video_id] = scores[start_idx:start_idx + video_frame_nums[video_id]]
+        # res_prob=np.array(scores_each_video[video_id])
+        # res_prob_norm = res_prob - res_prob.min()
+        # res_prob_norm = 1-(res_prob_norm / res_prob_norm.max())
+        # scores_each_video[video_id]=res_prob_norm.tolist()
+        #中值滤波
+        scores_each_video[video_id] = signal.medfilt(scores_each_video[video_id], kernel_size=17)
+        labels_each_video[video_id] = labels[start_idx:start_idx + video_frame_nums[video_id]]
+
+        start_idx += video_frame_nums[video_id]
+
+    truth = []
+    preds = []
+    for i in range(len(scores_each_video)):
+        truth.append(labels_each_video[i])
+        preds.append(scores_each_video[i])
+
+    truth = np.concatenate(truth, axis=0)
+    preds = np.concatenate(preds, axis=0)
+    
+    # print(truth)
+    # print(preds)
+    # preds=np.nan_to_num(preds.astype(np.float64))
+    fpr, tpr, roc_thresholds = roc_curve(truth, preds, pos_label=1)
+    auroc = auc(fpr, tpr)
+    
+    if auroc>=best_auc:##save the best result
+        if not os.path.exists(curves_save_path):
+            os.mkdir(curves_save_path)
+        joblib.dump(original_frame_scores, os.path.join(curves_save_path,
+                                                "frame_scores_best.json" ))
+        # draw ROC figure
+        draw_roc_curve(fpr, tpr, auroc, curves_save_path)
+        for i in sorted(scores_each_video.keys()):
+            plt.figure()
+
+            x = range(0, len(scores_each_video[i]))
+            plt.xlim([x[0], x[-1] + 5])
+
+            # anomaly scores
+            plt.plot(x, scores_each_video[i], color="blue", lw=2, label="Anomaly Score")
+
+            # abnormal sections
+            lb_one_intervals = nonzero_intervals(labels_each_video[i])
+            for idx, (start, end) in enumerate(lb_one_intervals):
+                plt.axvspan(start, end, alpha=0.5, color='red',
+                            label="_" * idx + "Anomaly Intervals")
+
+            plt.xlabel('Frames Sequence')
+            plt.title('Test video #%d' % (i + 1))
+            plt.legend(loc="upper left")
+            plt.savefig(os.path.join(curves_save_path, "anomaly_curve_%d.png" % (i + 1)))
+            plt.close()
+
+    return auroc
