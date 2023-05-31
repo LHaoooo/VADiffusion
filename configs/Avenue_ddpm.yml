@@ -61,7 +61,6 @@ test:
   begin_ckpt: 5000
   end_ckpt: 300000
   batch_size: 128
-  ckpt: ./best.pth
 
 data:
   dataset: "UCSD_ped2"

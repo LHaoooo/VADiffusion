@@ -43,7 +43,7 @@ def parse_args_and_config():
     with open(args.config, 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
 
-    args.log_path = os.path.join(args.exp, 'logs', config["training"]["ckpt_dir"])
+    args.log_path = os.path.join(args.exp, 'logs_lossX_wp1_normfront')
     # Override with config_mod
     # 当命令行使用了--config时，覆盖config文件中的相关参数
     for val in args.config_mod:

@@ -53,22 +53,24 @@ def anneal_dsm_score_estimation(scorenet, x, labels=None, loss_type='a', hook=No
     else:
         def pow_(x):
             return 1 / 2. * x.square()
-    loss = 10e-6*pow_((z - pred_noise).reshape(len(x), -1)).sum(dim=-1)
+    # loss = 10e-6*pow_((z - pred_noise).reshape(len(x), -1)).sum(dim=-1)
     # loss = pow_((z - scorenet(perturbed_x, labels, cond_mask=cond_mask)).reshape(len(x), -1)).sum(dim=-1)
     
     grad_loss = Gradient_Loss(1, 1, device=x.device)
-    # intensity_loss = Intensity_Loss(l_num=2).to(x.device)
+    intensity_loss = Intensity_Loss(l_num=2).to(x.device)
 
-    # loss_I = intensity_loss(x0, x)
+    loss_I = intensity_loss(x0, x)
     loss_G = grad_loss(x0, x)
     # loss_all = loss_I + loss_G
 
-    if hook is not None:
-        hook(loss, labels)
+    # if hook is not None:
+    #     hook(loss, labels)
+
     # print("loss",loss)
+    # print('lossI:',loss_I)
     # print("loss_G",loss_G)
-    return loss.mean(dim=0) +loss_G
-    # return loss.mean(dim=0)
+    # return loss.mean(dim=0) +loss_G
+    return loss_I + loss_G
 
 class Intensity_Loss(nn.Module):
     def __init__(self, l_num):
