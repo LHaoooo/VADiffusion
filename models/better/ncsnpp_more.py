@@ -53,7 +53,7 @@ class NCSNpp(nn.Module):
 
     self.num_frames = num_frames = self.num_pred
     # self.num_frames = num_frames = config.data.num_frames
-    self.num_frames_cond = num_frames_cond = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0)
+    self.num_frames_cond = num_frames_cond = config.model.clip_hist
     self.n_frames = num_frames + num_frames_cond
 
     # self.nf = nf = config.model.ngf*self.n_frames if self.is3d else config.model.ngf # We must prevent problems by multiplying by n_frames
@@ -425,14 +425,20 @@ class SPADE_NCSNpp(nn.Module):
     self.config = config
     self.act = act = get_act(config)
     self.register_buffer('sigmas', get_sigmas(config))
+    self.num_hist = config.model.clip_hist
+    self.num_pred = config.model.clip_pred
+    self.feature_root = config.model.feature_root
+    self.skip_ops = config.model.skip_ops
+    self.channels = channels = config.model.ImgChnNum
+    self.mv_channels = config.model.motion_channels  # num of MV channels
+
     self.is3d = (config.model.arch in ["unetmore3d", "unetmorepseudo3d"])
     self.pseudo3d = (config.model.arch == "unetmorepseudo3d")
     if self.is3d:
       from . import layers3d
 
-    self.channels = channels = config.data.channels
-    self.num_frames = num_frames = config.data.num_frames
-    self.num_frames_cond = num_frames_cond = config.data.num_frames_cond + getattr(config.data, "num_frames_future", 0)
+    self.num_frames = num_frames = self.num_pred
+    self.num_frames_cond = num_frames_cond = config.model.clip_hist
     self.n_frames = num_frames
 
     self.nf = nf = config.model.ngf*self.num_frames if self.is3d else config.model.ngf # We must prevent problems by multiplying by num_frames

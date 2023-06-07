@@ -1,6 +1,6 @@
 # writer ： Liuhao
 # create_time ： 2023/5/11 11:20
-# file_name：frame_pred_train.py
+# file_name：frame_pred.py
 
 '''
 Train a diffusion model to predict the target I frames
@@ -31,7 +31,9 @@ def parse_args_and_config():
     parser.add_argument('--verbose', type=str, default='info',
                          help='Verbose level: info | debug | warning | critical')
     parser.add_argument('--resume_training', action='store_true', help='Whether to resume training')
-    parser.add_argument('--train', type=bool, default=True, help='Whether to train the model')
+    parser.add_argument('--train', action='store_true', help='Whether to train the model')
+    parser.add_argument('--test', action='store_true', help='Whether to test the model')
+    parser.add_argument('--singletest', action='store_true', help='Whether to test the only model')
     parser.add_argument('--no_ema', action='store_true', help="Don't use Exponential Moving Average")
     parser.add_argument('--config_mod', nargs='*', type=str, default=[],
                         help='Overrid config options, e.g., model.ngf=64 model.spade=True training.batch_size=32')   # 这表示可以在命令行中去修改config中的参数
@@ -43,7 +45,8 @@ def parse_args_and_config():
     with open(args.config, 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
 
-    args.log_path = os.path.join(args.exp, 'logs_lossX_wp1_normfront')
+    # args.log_path = os.path.join(args.exp, 'logs_lossX_wp1_wostd_norm_trian_eval18500_19000')
+    args.log_path = os.path.join(args.exp, 'logs_lossX_wp1_wostd_norm_slide_trian')
     # Override with config_mod
     # 当命令行使用了--config时，覆盖config文件中的相关参数
     for val in args.config_mod:
@@ -188,8 +191,10 @@ def main():
                             trainset_yuvroot,testset_yuvroot,trainset_mvroot,testset_mvroot)
         if args.train:
             runner.train()
-        else:
+        elif args.test:
             runner.test()
+        elif args.singletest:
+            runner.Single_test()
     except:
         logging.error(traceback.format_exc())
     

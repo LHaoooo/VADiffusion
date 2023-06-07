@@ -57,10 +57,10 @@ def save_evaluation_curves(args,original_frame_scores,scores, labels, curves_sav
     start_idx = 0
     for video_id in range(len(video_frame_nums)):
         scores_each_video[video_id] = scores[start_idx:start_idx + video_frame_nums[video_id]]
-        # res_prob=np.array(scores_each_video[video_id])
-        # res_prob_norm = res_prob - res_prob.min()
-        # res_prob_norm = 1-(res_prob_norm / res_prob_norm.max())
-        # scores_each_video[video_id]=res_prob_norm.tolist()
+        res_prob=np.array(scores_each_video[video_id])
+        res_prob_norm = res_prob - res_prob.min()
+        res_prob_norm = 1-(res_prob_norm / res_prob_norm.max())
+        scores_each_video[video_id]=res_prob_norm.tolist()
         #中值滤波
         scores_each_video[video_id] = signal.medfilt(scores_each_video[video_id], kernel_size=17)
         labels_each_video[video_id] = labels[start_idx:start_idx + video_frame_nums[video_id]]
@@ -79,7 +79,7 @@ def save_evaluation_curves(args,original_frame_scores,scores, labels, curves_sav
     # print(truth)
     # print(preds)
     # preds=np.nan_to_num(preds.astype(np.float64))
-    fpr, tpr, roc_thresholds = roc_curve(truth, preds, pos_label=1)
+    fpr, tpr, roc_thresholds = roc_curve(truth, preds, pos_label=0)
     auroc = auc(fpr, tpr)
     
     if auroc>=best_auc:##save the best result
@@ -96,7 +96,7 @@ def save_evaluation_curves(args,original_frame_scores,scores, labels, curves_sav
             plt.xlim([x[0], x[-1] + 5])
 
             # anomaly scores
-            plt.plot(x, scores_each_video[i], color="blue", lw=2, label="Anomaly Score")
+            plt.plot(x, 1-scores_each_video[i], color="blue", lw=2, label="Anomaly Score")
 
             # abnormal sections
             lb_one_intervals = nonzero_intervals(labels_each_video[i])
@@ -127,10 +127,10 @@ def save_evaluation_curves_pred(original_frame_scores,scores, labels, curves_sav
     start_idx = 0
     for video_id in range(len(video_frame_nums)):
         scores_each_video[video_id] = scores[start_idx:start_idx + video_frame_nums[video_id]]
-        # res_prob=np.array(scores_each_video[video_id])
-        # res_prob_norm = res_prob - res_prob.min()
-        # res_prob_norm = 1-(res_prob_norm / res_prob_norm.max())
-        # scores_each_video[video_id]=res_prob_norm.tolist()
+        res_prob=np.array(scores_each_video[video_id])
+        res_prob_norm = res_prob - res_prob.min()
+        res_prob_norm = 1-(res_prob_norm / res_prob_norm.max())
+        scores_each_video[video_id]=res_prob_norm.tolist()
         #中值滤波
         scores_each_video[video_id] = signal.medfilt(scores_each_video[video_id], kernel_size=17)
         labels_each_video[video_id] = labels[start_idx:start_idx + video_frame_nums[video_id]]
@@ -149,9 +149,14 @@ def save_evaluation_curves_pred(original_frame_scores,scores, labels, curves_sav
     # print(truth)
     # print(preds)
     # preds=np.nan_to_num(preds.astype(np.float64))
-    fpr, tpr, roc_thresholds = roc_curve(truth, preds, pos_label=1)
+    fpr, tpr, roc_thresholds = roc_curve(truth, preds, pos_label=0)
     auroc = auc(fpr, tpr)
     
+    # calculate EER
+    # fnr = 1 - tpr
+    # eer1 = fpr[np.nanargmin(np.absolute(fnr - fpr))]
+    # eer2 = fnr[np.nanargmin(np.absolute(fnr - fpr))]
+
     if auroc>=best_auc:##save the best result
         if not os.path.exists(curves_save_path):
             os.mkdir(curves_save_path)
@@ -166,7 +171,7 @@ def save_evaluation_curves_pred(original_frame_scores,scores, labels, curves_sav
             plt.xlim([x[0], x[-1] + 5])
 
             # anomaly scores
-            plt.plot(x, scores_each_video[i], color="blue", lw=2, label="Anomaly Score")
+            plt.plot(x, 1-scores_each_video[i], color="blue", lw=2, label="Anomaly Score")
 
             # abnormal sections
             lb_one_intervals = nonzero_intervals(labels_each_video[i])

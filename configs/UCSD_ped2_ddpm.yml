@@ -3,20 +3,18 @@ training:
   batch_size: 8
   # n_epochs: 1000000
   n_epochs: 10000
-  n_iters: 3000001
-  sample_freq: 50000
-  val_freq: 1000
+  n_iters: 30001
+  sample_freq: 500
+  val_freq: 500
   log_freq: 100
   log_all_sigmas: false
 
 eval:
-  exp_name: Ped2_frmpred
-  eval_root: eval
   wr: 0.01
   wp: 1
   gt_dir: ./data
   batch_size: 128
-  early_end: 3
+  early_end: 10
 
 
 sampling:
@@ -58,10 +56,11 @@ fast_fid:
   n_steps_each: 0
 
 test:
-  begin_ckpt: 5000
-  end_ckpt: 300000
+  begin_ckpt: 18500
+  end_ckpt: 19000
+  freq: 500
   batch_size: 128
-  ckpt: ./best.pth
+  ckpt: /home/VADiffusion/exp1/logs_lossX_wp1_wostd_norm_trian/checkpoint_18500.pth
 
 data:
   dataset: "UCSD_ped2"
@@ -73,7 +72,7 @@ data:
   num_frames: 4
   num_frames_cond: 4
   num_frames_future: 0
-  prob_mask_cond: 0.0
+  prob_mask_cond: 0.0  # 0.5
   prob_mask_future: 0.0
   prob_mask_sync: false
 
@@ -87,7 +86,7 @@ model:
   motion_channels: 2
   recon_MV_pretrained: /home/VADiffusion/mv_ckpt/UCSD_ped2_mv_recon_stack_mv_123456/stackbest.pth
   depth: deep
-  version: DDPM  # DDIM
+  version: DDPM  # DDIM/DDPM
   gamma: false   # 是否使用gamma分布去生成初始数据
   arch: unetmore
   type: v1
@@ -102,25 +101,25 @@ model:
   spec_norm: false
   normalization: InstanceNorm++
   nonlinearity: swish
-  ngf: 16  # 64
+  ngf: 16  # 64  doubling ngf approximately doubles the memory demand
   ch_mult:   # [1,2,3,4,4,4]
     - 1
     - 2
     - 3
     - 4
-  num_res_blocks: 2 # 8 for traditional
+  num_res_blocks: 2 # 8 for traditional  number of sequential residual layers per block
   attn_resolutions: 
     - 8
     - 16
     - 32 # can use only 16 for traditional
-  n_head_channels: 32 # -1 for traditional  64
+  n_head_channels: 32 # -1 for traditional  64  doubling n_heads_channels approximately doubles the memory demand
   conditional: true
   noise_in_cond: false
   output_all_frames: false # could be useful especially for 3d models
   cond_emb: false
   spade: false  # 是否采用空间自适应归一化 
   spade_dim: 128
-  pretrained: None
+  pretrained: /home/VADiffusion/exp1/logs_lossX_wp1_ddpm_residual/checkpoint_9000.pth
 
 optim:
   weight_decay: 0.000
