@@ -12,7 +12,7 @@ import cv2
 import matplotlib
 import torch.nn as nn
 from loss.dsm import anneal_dsm_score_estimation
-from utils.eval_util import save_evaluation_curves_pred
+from utils.eval_util import save_evaluation_curves_pred,BalancedDataParallel
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
@@ -23,7 +23,7 @@ import scipy.stats as st
 import sys
 import time
 import yaml
-
+import gc
 import torch
 import torch.nn.functional as F
 import torchvision.transforms as Transforms
@@ -232,7 +232,7 @@ class NCSNRunner():
         recon_AE.eval()
 
         optimizer = get_optimizer(self.config, scorenet.parameters())
-        # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10,20,30], gamma=0.8)
+        # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[500,700,800], gamma=0.5)
 
         if torch.cuda.is_available():
             num_devices = torch.cuda.device_count()
@@ -295,7 +295,7 @@ class NCSNRunner():
 
                 # Data
                 sample_frames, sample_mvs, _, _, mv_last = train_data  # 取出一个batch的frames
-                # print(sample_frames.shape)  # 8,5,256,256
+                # print(sample_frames.shape)  # 8,5,256,256/[32, 15, 256, 256]
                 # print(sample_mvs.shape)  # 8,24,256,256
                 # print(mv_last.shape)  # 8,64,64,2
                 sample_frames = sample_frames.to(self.config.device)  # 前4个I作为cond，第五个作为predtarget
@@ -305,7 +305,7 @@ class NCSNRunner():
                                                      prob_mask_cond=getattr(self.config.data, 'prob_mask_cond', 0.0),
                                                      prob_mask_future=getattr(self.config.data, 'prob_mask_future', 0.0),
                                                      conditional=conditional)
-                
+                # print(cond.shape)  # [32, 12, 256, 256]
                 sample_mvs = sample_mvs.to(self.config.device)
 
                 # MV recon
@@ -316,31 +316,31 @@ class NCSNRunner():
                     mv_recon[:, y_ch * j:y_ch * (j + 1), :, :] = reconAE_out
                 # mv_recon = mv_recon - sample_mvs  # mv_residual
                 upsample=nn.Upsample(scale_factor=4, mode='nearest')
-                sample_mvs = upsample(mv_recon)
-                # sample_mvs = F.interpolate(mv_recon, size=(256, 256), mode='bilinear', align_corners=False)
-                # print("samplemv's shape: ",sample_mvs.shape)  # 8,24,256,256
-                sample_mvs_split = sample_mvs.view(sample_mvs.shape[0],4,6,256,256)
+                recon_mvs = upsample(mv_recon)
+                # recon_mvs = F.interpolate(mv_recon, size=(256, 256), mode='bilinear', align_corners=False)
+                # print("samplemv's shape: ",recon_mvs.shape)  # 8,24,256,256
+                recon_mvs_split = recon_mvs.view(recon_mvs.shape[0],4,6,256,256)
 
-                cond_ip = np.zeros((sample_mvs.shape[0], 28,256,256))
+                # cond_ip = np.zeros((recon_mvs.shape[0], 28,256,256))
+                cond_ip = np.zeros((recon_mvs.shape[0], 4*(y_ch+self.config.model.ImgChnNum),256,256))
                 for i in range(4):  # 插
-                    temp = sample_mvs_split[:,i,:,:,:]
+                    temp = recon_mvs_split[:,i,:,:,:]
                     # print("temp shape: ", temp.shape)  # 8,6,256,256
                     temp = temp.squeeze(1)  
-                    # print("squeeze temp shape: ", temp.shape)  # 8,6,256,256
-                    cond_ip[:,7*i:7*(i+1),:,:] = torch.cat((cond[:,i,:,:].unsqueeze(1).cpu(), temp.cpu()), dim =1)
+                    cond_ip[:,(y_ch+self.config.model.ImgChnNum)*i:(y_ch+self.config.model.ImgChnNum)*(i+1),:,:] = torch.cat((cond[:,i*self.config.model.ImgChnNum:(i+1)*self.config.model.ImgChnNum,:,:].cpu(), temp.cpu()), dim =1)
 
-                # cond_ip = torch.cat((cond, sample_mvs), dim =1)  # 非插
+                # cond_ip = torch.cat((cond, recon_mvs), dim =1)  # 非插
                 cond_ip = torch.from_numpy(cond_ip).to(self.config.device)  # 非插时注释
                 
                 # Loss
                 itr_start = time.time()
                 hook = None
                 loss = anneal_dsm_score_estimation(scorenet, sample_frames, labels=None, cond=cond_ip, cond_mask=cond_mask,
-                                                                    loss_type=getattr(self.config.training, 'loss_type', 'a'),
+                                                                    loss_type=getattr(self.config.training, 'loss_type', 'eps'),
                                                                     gamma=getattr(self.config.model, 'gamma', False),
                                                                     L1=getattr(self.config.training, 'L1', False), hook=hook,
                                                                     all_frames=getattr(self.config.model, 'output_all_frames', False))
-
+                # print(loss.shape)
                 # Optimize
                 loss.backward()
                 grad_norm = torch.nn.utils.clip_grad_norm_(scorenet.parameters(), getattr(self.config.optim, 'grad_clip', np.inf))  # 梯度裁剪，防止梯度爆炸
@@ -356,6 +356,7 @@ class NCSNRunner():
                 self.epochs.update(epoch + (batch + 1)/len(dataloader))
                 self.lr_meter.update(lr)
                 self.grad_norm.update(grad_norm.item())
+                # scheduler.step()
                 if step == 1 or step % getattr(self.config.training, "log_freq", 1) == 0:
                     logging.info("elapsed: {}, train time: {:.04f}, mem: {:.03f}GB, GPUmem: {:.03f}GB, step: {}, lr: {:.06f}, grad: {:.04f}, loss: {:.04f}".format(
                         str(datetime.timedelta(seconds=(time.time() - self.start_time)) + datetime.timedelta(seconds=self.time_elapsed_prev*3600))[:-3],
@@ -384,8 +385,8 @@ class NCSNRunner():
                 
                 test_scorenet = None
                 # Get test_scorenet
-                # if step == 1 or (step >= 10000 and step % self.config.training.val_freq == 0):
-                if step >= 5000 and step % self.config.training.val_freq == 0 :
+                # if step == 1 or (step >= 5000 and step % self.config.training.val_freq == 0):
+                if step >= 30000 and step % self.config.training.val_freq == 0 :
 
                     if self.config.model.ema:
                         test_scorenet = ema_helper.ema_copy(scorenet)
@@ -395,8 +396,8 @@ class NCSNRunner():
                     test_scorenet.eval()
              
                 # Validation
-                # if step == 1 or (step >= 10000 and step % self.config.training.val_freq == 0):
-                if step >= 5000 and step % self.config.training.val_freq == 0 :
+                # if step == 1 or (step >= 5000 and step % self.config.training.val_freq == 0):
+                if step >= 30000 and step % self.config.training.val_freq == 0 :
                     dataset_name = self.config.data.dataset
                     
                     score_func = nn.MSELoss(reduction="none")
@@ -416,7 +417,7 @@ class NCSNRunner():
                                                                             prob_mask_cond=0.0,
                                                                             prob_mask_future=0.0,
                                                                             conditional=conditional)
-                        
+                        sample_mvs_t = sample_mvs_t.to(self.config.device)
                         # MV recon
                         mv_recon_t = torch.zeros_like(sample_mvs_t)
                         y_ch = self.config.model.motion_channels*self.config.model.sampled_mv_num
@@ -426,18 +427,16 @@ class NCSNRunner():
                             mv_recon_t[:, y_ch * j:y_ch * (j + 1), :, :] = reconAE_out
                         # mv_recon_t = mv_recon_t - sample_mvs_t  # mv_residual
                         upsample=nn.Upsample(scale_factor=4, mode='nearest')
-                        sample_mvs_t1 = upsample(mv_recon_t)
-                        # sample_mvs_t1 = F.interpolate(mv_recon_t, size=(256, 256), mode='bilinear', align_corners=False)
-                        # print("samplemv's shape: ",sample_mvs_t.shape)
+                        recon_mvs_t1 = upsample(mv_recon_t)
+                        # recon_mvs_t1 = F.interpolate(mv_recon_t, size=(256, 256), mode='bilinear', align_corners=False)
+                        # print("samplemv's shape: ",recon_mvs_t.shape)
                         
-                        sample_mvs_t_split = sample_mvs_t1.view(sample_mvs_t1.shape[0],4,6,256,256)
-                        cond_ip_t = np.zeros((sample_mvs_t1.shape[0], 28,256,256))
+                        recon_mvs_t_split = recon_mvs_t1.view(recon_mvs_t1.shape[0],self.config.model.clip_hist,y_ch,256,256)
+                        cond_ip_t = np.zeros((recon_mvs_t1.shape[0], 4*(y_ch+self.config.model.ImgChnNum),256,256))
 
                         # Initial samples
-                        n_init_samples = sample_mvs_t1.shape[0]
+                        n_init_samples = recon_mvs_t1.shape[0]
                         channel_num = self.config.model.ImgChnNum*self.config.model.clip_pred
-                        # channel_num = self.config.model.ImgChnNum + self.config.model.clip_hist*(self.config.model.sampled_mv_num*self.config.model.motion_channels+ self.config.model.ImgChnNum)
-                        # init_samples_shape = (n_init_samples, self.config.data.channels*self.config.data.num_frames, self.config.data.image_size, self.config.data.image_size)
                         init_samples_shape = (n_init_samples, channel_num, self.config.data.image_size, self.config.data.image_size)
                         # print("init_sample_shape:", init_samples_shape)
 
@@ -449,24 +448,23 @@ class NCSNRunner():
                             else:
                                 init_samples = torch.randn(init_samples_shape, device=self.config.device)  # 使用高斯分布随机产生
                         for i in range(4):  # 插帧
-                            temp = sample_mvs_t_split[:,i,:,:,:]
-                            cond_ip_t[:,7*i:7*(i+1),:,:] = torch.cat((test_cond[:,i,:,:].unsqueeze(1).cpu(), temp.cpu()), dim =1)
+                            temp = recon_mvs_t_split[:,i,:,:,:]
+                            cond_ip_t[:,(y_ch+self.config.model.ImgChnNum)*i:(y_ch+self.config.model.ImgChnNum)*(i+1),:,:] = torch.cat((test_cond[:,i*self.config.model.ImgChnNum:(i+1)*self.config.model.ImgChnNum,:,:].cpu(), temp.cpu()), dim =1)
                         
-                        # cond_ip_t = torch.cat((test_cond, sample_mvs_t1), dim =1)  # 非插
+                        # cond_ip_t = torch.cat((test_cond, recon_mvs_t1), dim =1)  # 非插
                         cond_ip_t = torch.from_numpy(cond_ip_t).to(self.config.device)  # 非插要注释
 
                         with torch.no_grad():
                             test_hook = None
                             test_dsm_loss = anneal_dsm_score_estimation(test_scorenet, test_X, labels=None, cond=cond_ip_t, cond_mask=test_cond_mask,
-                                                                        loss_type=getattr(self.config.training, 'loss_type', 'a'),
+                                                                        loss_type=getattr(self.config.training, 'loss_type', 'eps'),
                                                                         gamma=getattr(self.config.model, 'gamma', False),
                                                                         L1=getattr(self.config.training, 'L1', False), hook=test_hook,
-                                                                        all_frames=getattr(self.config.model, 'output_all_frames', False))
-                        
-                        self.losses_test.update(test_dsm_loss.item(), step)
-                        logging.info("elapsed: {}, step: {}, mem: {:.03f}GB, GPUmem: {:.03f}GB, test_loss: {:.04f} ".format(
-                            str(datetime.timedelta(seconds=(time.time() - self.start_time)) + datetime.timedelta(seconds=self.time_elapsed_prev*3600))[:-3],
-                            step, get_proc_mem(), get_GPU_mem(), test_dsm_loss.item()))
+                                                                        all_frames=getattr(self.config.model, 'output_all_frames', False)) 
+                            self.losses_test.update(test_dsm_loss.item(), step)
+                            logging.info("elapsed: {}, step: {}, mem: {:.03f}GB, GPUmem: {:.03f}GB, test_loss: {:.04f} ".format(
+                                str(datetime.timedelta(seconds=(time.time() - self.start_time)) + datetime.timedelta(seconds=self.time_elapsed_prev*3600))[:-3],
+                                step, get_proc_mem(), get_GPU_mem(), test_dsm_loss.item()))
 
                         with torch.no_grad():
                             # frame sample for prediction
@@ -483,19 +481,27 @@ class NCSNRunner():
 
                             save_image(test_X[0], os.path.join(self.args.log_sample_path, 'X0_{}.png'.format(step)))
                             save_image(pred[0], os.path.join(self.args.log_sample_path, 'pred0_{}.png'.format(step)))
+                            self.error_map(test_X[0],pred[0],os.path.join(self.args.log_sample_path, 'residual0_{}.png'.format(step)))
+                            # residualframe = test_X[0] - pred[0]
+                            # save_image(residualframe, os.path.join(self.args.log_sample_path, 'residual0_{}.png'.format(step)))
                             del all_samples
                         
                         upsample=nn.Upsample(scale_factor=4, mode='nearest')
-                        loss_mv_val = score_func(upsample(mv_recon_t), upsample(sample_mvs_t)).cpu().data.numpy()# 128,24,256,256
+                        loss_mv_val = score_func(recon_mvs_t1, upsample(sample_mvs_t)).cpu().data.numpy()# 128,24,256,256
                         loss_frame_val = score_func(pred,test_X).cpu().data.numpy()# 128,1,256,256
                         loss_frame_val = np.mean(loss_frame_val, axis=1) # 128,256,256
                         loss_frame_val = np.expand_dims(loss_frame_val,axis=1) # 128,1,256,256
 
-                        # loss_mv_val = np.sum(np.sum(np.sum(loss_mv_val, axis=3), axis=2), axis=1)  # 使用滑动窗时要注释掉
-                        # loss_frame_val = np.sum(np.sum(np.sum(loss_frame_val, axis=3), axis=2), axis=1)
+                        loss_mv_val = np.sum(np.sum(np.sum(loss_mv_val, axis=3), axis=2), axis=1)  # 使用滑动窗时要注释掉
+                        loss_frame_val = np.sum(np.sum(np.sum(loss_frame_val, axis=3), axis=2), axis=1)
 
                         # print("mv_socre:",loss_mv_val)
                         # print("frame_score:",loss_frame_val)
+                        # PSNR 
+                        psnr_t = 10*np.log10((np.max(test_X.cpu().numpy())**2)/(loss_frame_val/(pred.shape[-1]**2)))
+                        loss_frame_val = 1 - (psnr_t-np.min(psnr_t))/(np.max(psnr_t)-np.min(psnr_t))
+
+                        loss_mv_val = loss_mv_val/(mv_recon_t.shape[-1]**2)
 
                         score_final1 = self.config.eval.wr*loss_mv_val + self.config.eval.wp*loss_frame_val  # 算这个的mean和std
                         
@@ -506,17 +512,17 @@ class NCSNRunner():
                         # score_final1=score_final1 + score_final1*weight #加权
 
                         # 滑动窗
-                        input_all_score=[]
-                        h = int((score_final1.shape)[-2]/self.step_size)
-                        w = int((score_final1.shape)[-1]/self.step_size)
-                        for i in range(h):
-                            for j in range(w):
-                                patch=score_final1[:,:,i*self.step_size:(i+1)*self.step_size,j*self.step_size:(j+1)*self.step_size]
-                                patch_score = np.sum(np.sum(np.sum(patch, axis=3), axis=2), axis=1)
-                                input_all_score.append(patch_score)
-                        input_all_score_array=np.array(input_all_score)
-                        input_scores=np.transpose(input_all_score_array,[1,0])
-                        score_final1 = input_scores.max(1)
+                        # input_all_score=[]
+                        # h = int((score_final1.shape)[-2]/self.step_size)
+                        # w = int((score_final1.shape)[-1]/self.step_size)
+                        # for i in range(h):
+                        #     for j in range(w):
+                        #         patch=score_final1[:,:,i*self.step_size:(i+1)*self.step_size,j*self.step_size:(j+1)*self.step_size]
+                        #         patch_score = np.sum(np.sum(np.sum(patch, axis=3), axis=2), axis=1)
+                        #         input_all_score.append(patch_score)
+                        # input_all_score_array=np.array(input_all_score)
+                        # input_scores=np.transpose(input_all_score_array,[1,0])
+                        # score_final1 = input_scores.max(1)
 
                         # score_final1 = self.config.eval.wr*loss_mv_val + self.config.eval.wp*loss_frame_val
                         # score_final1 = np.sum(np.sum(np.sum(score_final1, axis=3), axis=2), axis=1)
@@ -571,12 +577,12 @@ class NCSNRunner():
                     # print(frame_scores)
                     ##only save the best result
                     curves_save_path = os.path.join(self.args.log_path, 'anomaly_curves')
-                    auc = save_evaluation_curves_pred(original_frame_scores,frame_scores, gt_concat, curves_save_path,np.array(video_label_num),best_auc)
+                    auc,delta_s = save_evaluation_curves_pred(original_frame_scores,frame_scores, gt_concat, curves_save_path,np.array(video_label_num),best_auc)
 
-                    print("auc in step{} is {}".format(step,auc))
+                    print("auc in step{} is {},deltas={}".format(step,auc,delta_s))
                     ##save auc every validation step
                     auc_file = open(txtpath, 'a')
-                    auc_file.write( 'checkpoint_{}.pth\tAUC: {}\n'.format(step, auc ))
+                    auc_file.write( 'checkpoint_{}.pth\tAUC: {}\tdelta_s:{}\n'.format(step, auc, delta_s ))
                     auc_file.close()
                     
                     if auc >= best_auc:
@@ -653,6 +659,7 @@ class NCSNRunner():
         recon_AE = reconAE(num_in_ch=self.config.model.motion_channels*self.config.model.sampled_mv_num, 
                             seq_len=1, features_root=self.config.model.feature_root,
                             skip_ops=self.config.model.skip_ops).to(self.config.device)
+        # recon_AE = BalancedDataParallel(0, recon_AE, dim=0)
         recon_AE = torch.nn.DataParallel(recon_AE)
         recon_AE.load_state_dict(recon_MV_dict, False)
         for param in recon_AE.parameters():
@@ -662,15 +669,14 @@ class NCSNRunner():
 
         for ckpt in tqdm(range(self.config.test.begin_ckpt, self.config.test.end_ckpt + 1, getattr(self.config.test, "freq", 1000)),desc="processing ckpt:"):
             scorenet = get_model(self.config)
+            # scorenet = BalancedDataParallel(0, scorenet, dim=0)
             scorenet = torch.nn.DataParallel(scorenet)
-            states = torch.load(os.path.join(self.config.test.ckpt, f'checkpoint_{ckpt}.pth'), map_location=self.config.device)
+            states = torch.load(os.path.join(self.config.test.ckpt_path, f'checkpoint_{ckpt}.pth'), map_location=self.config.device)
             if self.config.model.ema:
                 ema_helper = EMAHelper(mu=self.config.model.ema_rate)
                 ema_helper.register(scorenet)
-                scorenet.load_state_dict(states[0])
                 ema_helper.load_state_dict(states[-1])
                 scorenet = ema_helper.ema_copy(scorenet)
-                # ema_helper.ema(scorenet)
             else:
                 scorenet.load_state_dict(states[0])
 
@@ -687,9 +693,14 @@ class NCSNRunner():
                 m=[0 for i in range((METADATA[dataset_name]["testing_frames_cnt"])[k])]
                 frame_scores.append(m)
 
+            pred_frames = []
+            GT_frames = []
+            # residual_frames = []
+
             for test_data in tqdm(test_loader, desc="Eval:", total=len(test_loader)):
                 test_X, sample_mvs_t, pred_frame_test, v_name, mv_last = test_data
                 test_X = test_X.to(self.config.device)
+                sample_mvs_t = sample_mvs_t.to(self.config.device)
                 test_X, test_cond, test_cond_mask = conditioning_fn(self.config, test_X, num_frames_pred=self.config.model.clip_pred,
                                                                     prob_mask_cond=0.0,
                                                                     prob_mask_future=0.0,
@@ -708,7 +719,7 @@ class NCSNRunner():
                 # sample_mvs_t1 = F.interpolate(mv_recon_t, size=(256, 256), mode='bilinear', align_corners=False)
                 
                 sample_mvs_t_split = sample_mvs_t1.view(sample_mvs_t1.shape[0],4,6,256,256)
-                cond_ip_t = np.zeros((sample_mvs_t1.shape[0], 28,256,256))
+                cond_ip_t = np.zeros((sample_mvs_t1.shape[0], 4*(y_ch+self.config.model.ImgChnNum),256,256))
 
                 # Initial samples
                 n_init_samples = sample_mvs_t1.shape[0]
@@ -724,17 +735,9 @@ class NCSNRunner():
                         init_samples = torch.randn(init_samples_shape, device=self.config.device)  # 使用高斯分布随机产生
                 for i in range(4):
                     temp = sample_mvs_t_split[:,i,:,:,:]
-                    cond_ip_t[:,7*i:7*(i+1),:,:] = torch.cat((test_cond[:,i,:,:].unsqueeze(1).cpu(), temp.cpu()), dim =1)
+                    cond_ip_t[:,(y_ch+self.config.model.ImgChnNum)*i:(y_ch+self.config.model.ImgChnNum)*(i+1),:,:] = torch.cat((test_cond[:,i*self.config.model.ImgChnNum:(i+1)*self.config.model.ImgChnNum,:,:].cpu(), temp.cpu()), dim =1)
 
                 cond_ip_t = torch.from_numpy(cond_ip_t).to(self.config.device)
-
-                with torch.no_grad():
-                    test_hook = None
-                    test_dsm_loss = anneal_dsm_score_estimation(scorenet, test_X, labels=None, cond=cond_ip_t, cond_mask=test_cond_mask,
-                                                                loss_type=getattr(self.config.training, 'loss_type', 'a'),
-                                                                gamma=getattr(self.config.model, 'gamma', False),
-                                                                L1=getattr(self.config.training, 'L1', False), hook=test_hook,
-                                                                all_frames=getattr(self.config.model, 'output_all_frames', False))
 
                 with torch.no_grad():
                     # frame sample for prediction
@@ -749,8 +752,12 @@ class NCSNRunner():
                     pred = all_samples[-1].reshape(all_samples[-1].shape[0], self.config.model.ImgChnNum*self.config.model.clip_pred,
                                                 self.config.data.image_size, self.config.data.image_size).to(self.config.device)
 
-                    save_image(test_X[0], os.path.join(self.args.log_sample_path, 'X0.png'))
-                    save_image(pred[0], os.path.join(self.args.log_sample_path, 'pred0.png'))
+                    # save_image(test_X[0], os.path.join(self.args.log_sample_path, 'X0_{}.png'.format(ckpt)))
+                    # save_image(pred[0], os.path.join(self.args.log_sample_path, 'pred0_{}.png'.format(ckpt)))
+                    for num in range(len(test_X)):
+                        GT_frames.append(test_X[num])
+                        pred_frames.append(pred[num])
+                        # residual_frames.append(test_X[num]-pred[num])
                     del all_samples
                 
                 upsample=nn.Upsample(scale_factor=4, mode='nearest')
@@ -761,6 +768,12 @@ class NCSNRunner():
 
                 loss_mv_val = np.sum(np.sum(np.sum(loss_mv_val, axis=3), axis=2), axis=1)  # 使用滑动窗要注释
                 loss_frame_val = np.sum(np.sum(np.sum(loss_frame_val, axis=3), axis=2), axis=1)
+
+                # PSNR 
+                psnr_t = 10*np.log10((np.max(test_X.cpu().numpy())**2)/(loss_frame_val/(pred.shape[-1]**2)))
+                loss_frame_val = 1 - (psnr_t-np.min(psnr_t))/(np.max(psnr_t)-np.min(psnr_t))
+
+                loss_mv_val = loss_mv_val/(mv_recon_t.shape[-1]**2)
 
                 # print("mv_socre:",loss_mv_val)
                 # print("frame_score:",loss_frame_val)
@@ -832,18 +845,25 @@ class NCSNRunner():
             # print(frame_scores)
             ##only save the best result
             curves_save_path = os.path.join(self.args.log_path, 'anomaly_curves')
-            auc = save_evaluation_curves_pred(original_frame_scores,frame_scores, gt_concat, curves_save_path,np.array(video_label_num),best_auc)
-            print("auc in ckpt{} is {}".format(ckpt,auc))
+            auc, delta_s = save_evaluation_curves_pred(original_frame_scores,frame_scores, gt_concat, curves_save_path,np.array(video_label_num),best_auc)
+            print("auc in ckpt{} is {}, deltas={}".format(ckpt,auc,delta_s))
             ##save auc every validation step
             auc_file = open(txtpath, 'a')
-            auc_file.write( 'checkpoint_{}.pth\tAUC: {}\n'.format(ckpt, auc ))
+            auc_file.write( 'checkpoint_{}.pth\tAUC: {}\t deltas:{}\n'.format(ckpt, auc, delta_s ))
             auc_file.close()
             del scorenet
             if auc >= best_auc:
                 best_auc = auc
                 best_ckpt = ckpt
+                best_deltas = delta_s
+                for i in range(len(GT_frames)):
+                    save_image(GT_frames[i], os.path.join(self.args.log_sample_path, 'X{}.png'.format(i)))
+                    save_image(pred_frames[i], os.path.join(self.args.log_sample_path, 'pred{}.png'.format(i)))
+                    self.error_map(GT_frames[i], pred_frames[i],os.path.join(self.args.log_sample_path, 'residual{}.png'.format(i)))
+                    # save_image(residual_frames[i], os.path.join(self.args.log_sample_path, 'residual{}.png'.format(i)))
+                print('the figs are saved')
         
-        print("================ Best AUC {0:.5f} in ckpt {1}  ================".format(best_auc, best_ckpt))
+        print("================ Best AUC {0:.5f} in ckpt {1}, deltas={2:.5f}  ================".format(best_auc, best_ckpt, best_deltas))
 
     def Single_test(self):
         test_dataset = VideoDataset(self.config.model.ImgChnNum, self.config.model.sampled_mv_num,
@@ -865,6 +885,7 @@ class NCSNRunner():
                             seq_len=1, features_root=self.config.model.feature_root,
                             skip_ops=self.config.model.skip_ops).to(self.config.device)
         recon_AE = torch.nn.DataParallel(recon_AE)
+        # recon_AE = BalancedDataParallel(0,recon_AE,dim=0)
         recon_AE.load_state_dict(recon_MV_dict, False)
         for param in recon_AE.parameters():
             param.requires_grad = False
@@ -873,13 +894,12 @@ class NCSNRunner():
 
         scorenet = get_model(self.config)
         scorenet = torch.nn.DataParallel(scorenet)
+        # scorenet = BalancedDataParallel(0,scorenet,dim=0)
         states = torch.load(self.config.test.ckpt, map_location=self.config.device)
+        # scorenet.load_state_dict(states[0], strict=False)
         if self.config.model.ema:
             ema_helper = EMAHelper(mu=self.config.model.ema_rate)
             ema_helper.register(scorenet)
-            # scorenet.load_state_dict(states[0])
-            # ema_helper.load_state_dict(states[-1])
-            # scorenet = ema_helper.ema_copy(scorenet)
             ema_helper.load_state_dict(states[-1])
             ema_helper.ema(scorenet)
         else:
@@ -894,60 +914,60 @@ class NCSNRunner():
         video_list.sort()
 
         frame_scores=[]
+
+        pred_frames = []
+        GT_frames = []
+        
         for k in range(len(video_list)):
             m=[0 for i in range((METADATA[dataset_name]["testing_frames_cnt"])[k])]
             frame_scores.append(m)
 
-        for test_data in tqdm(test_loader, desc="Eval:", total=len(test_loader)):
-            test_X, sample_mvs_t, pred_frame_test, v_name, mv_last = test_data
-            test_X = test_X.to(self.config.device)
-            test_X, test_cond, test_cond_mask = conditioning_fn(self.config, test_X, num_frames_pred=self.config.model.clip_pred,
-                                                                prob_mask_cond=0.0,
-                                                                prob_mask_future=0.0,
-                                                                conditional=conditional)
-            
-            # MV recon
-            mv_recon_t = torch.zeros_like(sample_mvs_t)
-            y_ch = self.config.model.motion_channels*self.config.model.sampled_mv_num
-            
-            for j in range(self.config.model.clip_hist):
-                _, reconAE_out = recon_AE(sample_mvs_t[:, y_ch * j:y_ch * (j + 1), :, :])
-                mv_recon_t[:, y_ch * j:y_ch * (j + 1), :, :] = reconAE_out
-            # mv_recon_t = mv_recon_t - sample_mvs_t # MV residual
-            upsample=nn.Upsample(scale_factor=4, mode='nearest')
-            sample_mvs_t1 = upsample(mv_recon_t)
-            # sample_mvs_t1 = F.interpolate(mv_recon_t, size=(256, 256), mode='bilinear', align_corners=False)
-            
-            sample_mvs_t_split = sample_mvs_t1.view(sample_mvs_t1.shape[0],4,6,256,256)
-            cond_ip_t = np.zeros((sample_mvs_t1.shape[0], 28,256,256))
+        with torch.no_grad():
+            for test_data in tqdm(test_loader, desc="Eval:", total=len(test_loader)):
+                # gc.collect()
+                # torch.cuda.empty_cache()
+                test_X, sample_mvs_t, pred_frame_test, v_name, mv_last = test_data
+                test_X = test_X.to(self.config.device)
+                sample_mvs_t = sample_mvs_t.to(self.config.device)
+                test_X, test_cond, test_cond_mask = conditioning_fn(self.config, test_X, num_frames_pred=self.config.model.clip_pred,
+                                                                    prob_mask_cond=0.0,
+                                                                    prob_mask_future=0.0,
+                                                                    conditional=conditional)
+                
+                # MV recon
+                mv_recon_t = torch.zeros_like(sample_mvs_t)
+                y_ch = self.config.model.motion_channels*self.config.model.sampled_mv_num
+                
+                for j in range(self.config.model.clip_hist):
+                    _, reconAE_out = recon_AE(sample_mvs_t[:, y_ch * j:y_ch * (j + 1), :, :])
+                    mv_recon_t[:, y_ch * j:y_ch * (j + 1), :, :] = reconAE_out
+                # mv_recon_t = mv_recon_t - sample_mvs_t # MV residual
+                upsample=nn.Upsample(scale_factor=4, mode='nearest')
+                sample_mvs_t1 = upsample(mv_recon_t)
+                # sample_mvs_t1 = F.interpolate(mv_recon_t, size=(256, 256), mode='bilinear', align_corners=False)
+                
+                sample_mvs_t_split = sample_mvs_t1.view(sample_mvs_t1.shape[0],4,6,256,256)
+                cond_ip_t = np.zeros((sample_mvs_t1.shape[0], 4*(y_ch+self.config.model.ImgChnNum),256,256))
 
-            # Initial samples
-            n_init_samples = sample_mvs_t1.shape[0]
-            channel_num = self.config.model.ImgChnNum*self.config.model.clip_pred
-            init_samples_shape = (n_init_samples, channel_num, self.config.data.image_size, self.config.data.image_size)
+                # Initial samples
+                n_init_samples = sample_mvs_t1.shape[0]
+                channel_num = self.config.model.ImgChnNum*self.config.model.clip_pred
+                init_samples_shape = (n_init_samples, channel_num, self.config.data.image_size, self.config.data.image_size)
 
-            if self.version == "DDPM" or self.version == "DDIM" :
-                if getattr(self.config.model, 'gamma', False):    # 使用gamma分布
-                    used_k, used_theta = scorenet.k_cum[0], scorenet.theta_t[0]
-                    z = Gamma(torch.full(init_samples_shape, used_k), torch.full(init_samples_shape, 1 / used_theta)).sample().to(self.config.device)
-                    init_samples = z - used_k*used_theta # we don't scale here
-                else:
-                    init_samples = torch.randn(init_samples_shape, device=self.config.device)  # 使用高斯分布随机产生
-            for i in range(4):
-                temp = sample_mvs_t_split[:,i,:,:,:]
-                cond_ip_t[:,7*i:7*(i+1),:,:] = torch.cat((test_cond[:,i,:,:].unsqueeze(1).cpu(), temp.cpu()), dim =1)
+                if self.version == "DDPM" or self.version == "DDIM" :
+                    if getattr(self.config.model, 'gamma', False):    # 使用gamma分布
+                        used_k, used_theta = scorenet.k_cum[0], scorenet.theta_t[0]
+                        z = Gamma(torch.full(init_samples_shape, used_k), torch.full(init_samples_shape, 1 / used_theta)).sample().to(self.config.device)
+                        init_samples = z - used_k*used_theta # we don't scale here
+                    else:
+                        init_samples = torch.randn(init_samples_shape, device=self.config.device)  # 使用高斯分布随机产生
+                for i in range(4):
+                    temp = sample_mvs_t_split[:,i,:,:,:]
+                    cond_ip_t[:,(y_ch+self.config.model.ImgChnNum)*i:(y_ch+self.config.model.ImgChnNum)*(i+1),:,:] = torch.cat((test_cond[:,i*self.config.model.ImgChnNum:(i+1)*self.config.model.ImgChnNum,:,:].cpu(), temp.cpu()), dim =1)
 
-            cond_ip_t = torch.from_numpy(cond_ip_t).to(self.config.device)
+                cond_ip_t = torch.from_numpy(cond_ip_t).to(self.config.device)
 
-            with torch.no_grad():
-                test_hook = None
-                test_dsm_loss = anneal_dsm_score_estimation(scorenet, test_X, labels=None, cond=cond_ip_t, cond_mask=test_cond_mask,
-                                                            loss_type=getattr(self.config.training, 'loss_type', 'a'),
-                                                            gamma=getattr(self.config.model, 'gamma', False),
-                                                            L1=getattr(self.config.training, 'L1', False), hook=test_hook,
-                                                            all_frames=getattr(self.config.model, 'output_all_frames', False))
-
-            with torch.no_grad():
+                # with torch.no_grad():
                 # frame sample for prediction
                 all_samples = sampler(init_samples, scorenet, cond=cond_ip_t, cond_mask=test_cond_mask,
                                     n_steps_each=self.config.sampling.n_steps_each,
@@ -960,45 +980,53 @@ class NCSNRunner():
                 pred = all_samples[-1].reshape(all_samples[-1].shape[0], self.config.model.ImgChnNum*self.config.model.clip_pred,
                                             self.config.data.image_size, self.config.data.image_size).to(self.config.device)
 
-                save_image(test_X[0], os.path.join(self.args.log_sample_path, 'X0.png'))
-                save_image(pred[0], os.path.join(self.args.log_sample_path, 'pred0.png'))
+                # save_image(test_X[0], os.path.join(self.args.log_sample_path, 'X0.png'))
+                # save_image(pred[0], os.path.join(self.args.log_sample_path, 'pred0.png'))
+                for num in range(len(test_X)):
+                    GT_frames.append(test_X[num])
+                    pred_frames.append(pred[num])
                 del all_samples
+                
+                upsample=nn.Upsample(scale_factor=4, mode='nearest')
+                loss_mv_val = score_func(upsample(mv_recon_t), upsample(sample_mvs_t)).cpu().data.numpy()# 128,24,256,256
+                loss_frame_val = score_func(pred,test_X).cpu().data.numpy()# 128,1,256,256
+                loss_frame_val = np.mean(loss_frame_val, axis=1) # 128,256,256
+                loss_frame_val = np.expand_dims(loss_frame_val,axis=1) # 128,1,256,256
+
+                loss_mv_val = np.sum(np.sum(np.sum(loss_mv_val, axis=3), axis=2), axis=1)  # 使用滑动窗要注释
+                loss_frame_val = np.sum(np.sum(np.sum(loss_frame_val, axis=3), axis=2), axis=1)
+
+                score_final1 = self.config.eval.wr*loss_mv_val + self.config.eval.wp*loss_frame_val  # 算这个的mean和std
+
+                # PSNR 
+                psnr_t = 10*np.log10((np.max(test_X.cpu().numpy())**2)/(loss_frame_val/(pred.shape[-1]**2)))
+                del pred
+                loss_frame_val = 1 - (psnr_t-np.min(psnr_t))/(np.max(psnr_t)-np.min(psnr_t))
+
+                loss_mv_val = loss_mv_val/(mv_recon_t.shape[-1]**2)
+                
+                # mv_last=np.array(mv_last)
+                # weight_numpy_all=self.mv_area_weight(mv_last) #Batch
+                # weight=np.expand_dims(np.array(weight_numpy_all),axis=1)
+                # score_final1=score_final1 + score_final1*weight #加权
             
-            upsample=nn.Upsample(scale_factor=4, mode='nearest')
-            loss_mv_val = score_func(upsample(mv_recon_t), upsample(sample_mvs_t)).cpu().data.numpy()# 128,24,256,256
-            loss_frame_val = score_func(pred,test_X).cpu().data.numpy()# 128,1,256,256
-            loss_frame_val = np.mean(loss_frame_val, axis=1) # 128,256,256
-            loss_frame_val = np.expand_dims(loss_frame_val,axis=1) # 128,1,256,256
+                # input_all_score=[]
+                # h = int((score_final1.shape)[-2]/self.step_size)
+                # w = int((score_final1.shape)[-1]/self.step_size)
+                # for i in range(h):
+                #     for j in range(w):
+                #         patch=score_final1[:,:,i*self.step_size:(i+1)*self.step_size,j*self.step_size:(j+1)*self.step_size]
+                #         patch_score = np.sum(np.sum(np.sum(patch, axis=3), axis=2), axis=1)
+                #         input_all_score.append(patch_score)
+                # input_all_score_array=np.array(input_all_score)
+                # input_scores=np.transpose(input_all_score_array,[1,0])
+                # score_final1 = input_scores.max(1)
 
-            loss_mv_val = np.sum(np.sum(np.sum(loss_mv_val, axis=3), axis=2), axis=1)  # 使用滑动窗要注释
-            loss_frame_val = np.sum(np.sum(np.sum(loss_frame_val, axis=3), axis=2), axis=1)
-
-            # print("mv_socre:",loss_mv_val)
-            # print("frame_score:",loss_frame_val)
-
-            score_final1 = self.config.eval.wr*loss_mv_val + self.config.eval.wp*loss_frame_val  # 算这个的mean和std
-            
-            # mv_last=np.array(mv_last)
-            # weight_numpy_all=self.mv_area_weight(mv_last) #Batch
-            # weight=np.expand_dims(np.array(weight_numpy_all),axis=1)
-            # score_final1=score_final1 + score_final1*weight #加权
-        
-            # input_all_score=[]
-            # h = int((score_final1.shape)[-2]/self.step_size)
-            # w = int((score_final1.shape)[-1]/self.step_size)
-            # for i in range(h):
-            #     for j in range(w):
-            #         patch=score_final1[:,:,i*self.step_size:(i+1)*self.step_size,j*self.step_size:(j+1)*self.step_size]
-            #         patch_score = np.sum(np.sum(np.sum(patch, axis=3), axis=2), axis=1)
-            #         input_all_score.append(patch_score)
-            # input_all_score_array=np.array(input_all_score)
-            # input_scores=np.transpose(input_all_score_array,[1,0])
-            # score_final1 = input_scores.max(1)
-
-            # anomaly scores for each sample
-            for i in range(len(score_final1)):
-                video_index=video_list.index(v_name[i])
-                frame_scores[video_index][pred_frame_test[i]] = score_final1[i] ##the score of corresponding frame
+                # anomaly scores for each sample
+                for i in range(len(score_final1)):
+                    video_index=video_list.index(v_name[i])
+                    frame_scores[video_index][pred_frame_test[i]] = score_final1[i] ##the score of corresponding frame
+                torch.cuda.empty_cache()
 
         # print('framsc1shape:',frame_scores)
         frame_scores2=[]
@@ -1043,17 +1071,22 @@ class NCSNRunner():
         # print(frame_scores)
         ##only save the best result
         curves_save_path = os.path.join(self.args.log_path, 'anomaly_curves')
-        auc = save_evaluation_curves_pred(original_frame_scores,frame_scores, gt_concat, curves_save_path,np.array(video_label_num),best_auc)
-        print("auc is {}".format(auc))
+        auc,delta_s = save_evaluation_curves_pred(original_frame_scores,frame_scores, gt_concat, curves_save_path,np.array(video_label_num),best_auc)
+        print("auc is {},deltas is {}".format(auc,delta_s))
         ##save auc every validation step
         auc_file = open(txtpath, 'a')
-        auc_file.write( 'AUC: {}'.format( auc ))
+        auc_file.write( 'AUC: {}\tDelta_s:{}'.format( auc ,delta_s))
         auc_file.close()
         del scorenet
         if auc >= best_auc:
             best_auc = auc
+            best_deltas = delta_s
+            for i in range(len(GT_frames)):
+                save_image(GT_frames[i], os.path.join(self.args.log_sample_path, 'X{}.png'.format(i)))
+                save_image(pred_frames[i], os.path.join(self.args.log_sample_path, 'pred{}.png'.format(i)))
+                self.error_map(GT_frames[i], pred_frames[i],os.path.join(self.args.log_sample_path, 'residual{}.png'.format(i)))
     
-        print("================ Best AUC {0:.5f} ================".format(best_auc))
+        print("================ AUC {0:.5f},delta_s {1:.5f} ================".format(best_auc, best_deltas))
 
     def mv_area_weight(self,mv):#mv:Batch x H x W x C 已经调整到[0,255]
         upsample=nn.Upsample(scale_factor=4, mode='nearest')
@@ -1268,3 +1301,15 @@ class NCSNRunner():
             raise KeyboardInterrupt
         except:
             print(sys.exc_info()[0])
+
+    def error_map(self, image1, image2, save_path):
+        image1_np = image1.cpu().numpy()
+        image2_np = image2.cpu().numpy()
+        diff = np.abs(image1_np - image2_np)
+        diff = np.squeeze(diff)
+
+        plt.imshow(diff, cmap='plasma', vmin=0.3*np.max(diff), vmax=np.max(diff))
+        # plt.colorbar(label='Error')
+
+        plt.savefig(save_path)
+        plt.close() 

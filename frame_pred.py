@@ -7,6 +7,7 @@ Train a diffusion model to predict the target I frames
 '''
 import argparse
 import copy
+import random
 import traceback
 import os,torch,xlwt
 import time,datetime
@@ -24,7 +25,7 @@ def parse_args_and_config():
     parser.add_argument('--data_path', type=str, default='/home/Dataset/UCSD_ped/UCSD_ped2',
                         help='The basic Path to the dataset')
     parser.add_argument('--seed', type=int, default=123456, help='Random seed')
-    parser.add_argument('--device_ids', type=str, default='1,2,3,6', help='the ids of devices used')
+    parser.add_argument('--device_ids', type=str, default='0,2,3,6', help='the ids of devices used')
     parser.add_argument('--exp', type=str, default='exp1',
                          help='Path for saving running related data.Change the name to the different exp')
     parser.add_argument('--comment', type=str, default='', help='A string for experiment comment')
@@ -45,8 +46,8 @@ def parse_args_and_config():
     with open(args.config, 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
 
-    # args.log_path = os.path.join(args.exp, 'logs_lossX_wp1_wostd_norm_trian_eval18500_19000')
-    args.log_path = os.path.join(args.exp, 'logs_lossX_wp1_wostd_norm_slide_trian')
+    # args.log_path = os.path.join(args.exp, 'logs_lossE_test')
+    args.log_path = os.path.join(args.exp, 'logs_lossE_DDIM50_mask_traintttt')
     # Override with config_mod
     # 当命令行使用了--config时，覆盖config文件中的相关参数
     for val in args.config_mod:
@@ -128,13 +129,15 @@ def parse_args_and_config():
     # config_uncond = new_config
 
     # set random seed
+    random.seed(args.seed)
     os.environ['PYTHONHASHSEED'] = str(args.seed)
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     if torch.cuda.is_available():
+        torch.cuda.manual_seed(args.seed)
         torch.cuda.manual_seed_all(args.seed)
     torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.deterministic = True
 
     # return args, new_config, config_uncond
     return args, new_config
@@ -182,7 +185,9 @@ def main():
     print("<" * 80)
 
     trainset_yuvroot=os.path.join(args.data_path, "train_recyuv400/")
-    testset_yuvroot=os.path.join(args.data_path,  "test_recyuv400/")
+    testset_yuvroot=os.path.join(args.data_path,  "test_recyuv400/")  # uscd
+    # trainset_yuvroot=os.path.join(args.data_path, "train19_recyuv/")
+    # testset_yuvroot=os.path.join(args.data_path,  "test19_recyuv/")  # avenue
     trainset_mvroot=os.path.join(args.data_path,  "trainmv_txt/")
     testset_mvroot=os.path.join(args.data_path,  "testmv_txt/")
 

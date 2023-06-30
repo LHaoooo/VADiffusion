@@ -2,9 +2,11 @@ import torch
 import torch.nn as nn
 from functools import partial
 from torch.distributions.gamma import Gamma
+import torch.nn.functional as F
+from einops import reduce
 
 
-def anneal_dsm_score_estimation(scorenet, x, labels=None, loss_type='a', hook=None, cond=None, cond_mask=None, gamma=False, L1=False, all_frames=False):
+def anneal_dsm_score_estimation(scorenet, x, labels=None, loss_type='eps', hook=None, cond=None, cond_mask=None, gamma=False, L1=False, all_frames=False):
     net = scorenet.module if hasattr(scorenet, 'module') else scorenet
     version = getattr(net, 'version', 'DDPM').upper()
     net_type = getattr(net, 'type') if isinstance(getattr(net, 'type'), str) else 'v1'
@@ -38,38 +40,49 @@ def anneal_dsm_score_estimation(scorenet, x, labels=None, loss_type='a', hook=No
         perturbed_x = used_alphas.sqrt() * x + (1 - used_alphas).sqrt() * z
         # print('preturb x:',perturbed_x.shape)  # 8,1,256,256
     scorenet = partial(scorenet, cond=cond)
-
     pred_noise = scorenet(perturbed_x, labels, cond_mask=cond_mask)
     # print('pred noise',pred_noise.shape)  # 8,1,256,256
 
-    x0 = (1 / used_alphas.sqrt()) * (perturbed_x - (1 - used_alphas).sqrt() * pred_noise)
-    # print('x0 ',x0.shape)  # 8,1,256,256
-
     # Loss
     if L1:
-    # if config.training.L1:
         def pow_(x):
             return x.abs()
     else:
         def pow_(x):
             return 1 / 2. * x.square()
-    loss = pow_((z - pred_noise).reshape(len(x), -1)).sum(dim=-1)
     
-    grad_loss = Gradient_Loss(1, 1, device=x.device)
-    intensity_loss = Intensity_Loss(l_num=2).to(x.device)
+    if hook is not None:
+        hook(loss_eps, labels)
 
-    loss_I = intensity_loss(x0, x)
-    loss_G = grad_loss(x0, x)
-    # loss_all = loss_I + loss_G
-
-    # if hook is not None:
-    #     hook(loss, labels)
-
-    # print("\n loss:",loss)
-    # print('\n lossI:',loss_I)
-    # print("\n loss_G:",loss_G)
-    # return loss.mean(dim=0) +loss_G
-    return loss_I + loss_G
+    if loss_type == 'eps':
+        loss_eps = pow_((z - pred_noise).reshape(len(x), -1)).sum(dim=-1)
+        return loss_eps.mean(dim=0)
+    elif loss_type == 'x0':
+        x0 = (1 / used_alphas.sqrt()) * (perturbed_x - (1 - used_alphas).sqrt() * pred_noise)
+        # print('x0 ',x0.shape)  # 8,1,256,256
+        intensity_loss = Intensity_Loss(l_num=2).to(x.device)
+        loss_x0 = intensity_loss(x0, x)
+        return loss_x0
+    elif loss_type == 'x0+g':
+        x0 = (1 / used_alphas.sqrt()) * (perturbed_x - (1 - used_alphas).sqrt() * pred_noise)
+        grad_loss = Gradient_Loss(1, x.shape[1], device=x.device)
+        intensity_loss = Intensity_Loss(l_num=2).to(x.device)
+        loss_x0 = intensity_loss(x0, x)
+        loss_G = grad_loss(x0, x)
+        return loss_x0+loss_G
+    elif loss_type == 'min_snr_gamma_eps':
+        snr = used_alphas/(1-used_alphas)
+        clipped_snr = snr.clone()
+        loss_snr_eps = F.mse_loss(pred_noise,z,reduction='none')
+        loss_snr_eps = reduce(loss_snr_eps,'b ... -> b','mean')
+        return ((clipped_snr.clamp_(max = 5)/snr)*loss_snr_eps).mean()
+    elif loss_type == 'min_snr_gamma_x0':
+        x0 = (1 / used_alphas.sqrt()) * (perturbed_x - (1 - used_alphas).sqrt() * pred_noise)
+        snr = used_alphas/(1-used_alphas)
+        clipped_snr = snr.clone()
+        loss_snr_x0 = F.mse_loss(x0,x,reduction='none')
+        loss_snr_x0 = reduce(loss_snr_x0,'b ... -> b','mean')
+        return (clipped_snr.clamp_(max = 5)*loss_snr_x0).mean()
 
 class Intensity_Loss(nn.Module):
     def __init__(self, l_num):

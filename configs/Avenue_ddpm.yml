@@ -1,23 +1,20 @@
 training:
   L1: false
+  loss_type: eps  # min_snr_gamma_eps/x0/x0+g/v
   batch_size: 8
-  # n_epochs: 1000000
   n_epochs: 10000
-  n_iters: 3000001
-  sample_freq: 50000
+  n_iters: 50001
+  sample_freq: 1000
   val_freq: 1000
   log_freq: 100
   log_all_sigmas: false
 
 eval:
-  exp_name: Ped2_frmpred
-  eval_root: eval
   wr: 0.01
   wp: 1
   gt_dir: ./data
   batch_size: 128
-  early_end: 3
-
+  early_end: 10
 
 sampling:
   batch_size: 100
@@ -28,7 +25,7 @@ sampling:
   ssim: true
   fvd: true
   denoise: true
-  subsample: 1000
+  subsample: 50
   num_samples4fid: 10000
   num_samples4fvd: 10000
   inpainting: false
@@ -45,28 +42,19 @@ sampling:
   one_frame_at_a_time: false
   preds_per_test: 1
 
-fast_fid:
-  batch_size: 1000
-  num_samples: 1000
-  begin_ckpt: 5000
-  freq: 5000
-  end_ckpt: 300000
-  pr_nn_k: 3
-  verbose: false
-  ensemble: false
-  step_lr: 0.0
-  n_steps_each: 0
-
 test:
-  begin_ckpt: 5000
-  end_ckpt: 300000
-  batch_size: 128
+  begin_ckpt: 500
+  end_ckpt: 46000
+  batch_size: 64
+  freq: 500
+  ckpt_path: /home/VADiffusion/exp2/logs_lossE
+  ckpt: /home/VADiffusion/exp2/logs_lossE/checkpoint_46000.pth
 
 data:
-  dataset: "UCSD_ped2"
+  dataset: "avenue"
   image_size: 256
   # channels: 1
-  num_workers: 0
+  num_workers: 8
   num_digits: 2
   step_length: 0.1
   num_frames: 4
@@ -77,16 +65,16 @@ data:
   prob_mask_sync: false
 
 model:
-  ImgChnNum: 1
+  ImgChnNum: 3
   sampled_mv_num : 3
   clip_hist: 4
   clip_pred: 1
   feature_root: 16
   skip_ops: [ "none", "none", "none","none"]
   motion_channels: 2
-  recon_MV_pretrained: /home/VADiffusion/mv_ckpt/UCSD_ped2_mv_recon_stack_mv_123456/stackbest.pth
+  recon_MV_pretrained: /home/VADiffusion/mv_ckpt/avenue_mv_recon_stack_mv_123456/stackbest.pth
   depth: deep
-  version: DDPM  # DDIM
+  version: DDIM  # DDIM
   gamma: false   # 是否使用gamma分布去生成初始数据
   arch: unetmore
   type: v1
@@ -124,7 +112,7 @@ model:
 optim:
   weight_decay: 0.000
   optimizer: "Adam"
-  lr: 0.00005
+  lr: 0.0005
   warmup: 1000
   beta1: 0.9
   amsgrad: false

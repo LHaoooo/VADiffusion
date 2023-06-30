@@ -1,7 +1,7 @@
 training:
   L1: false
+  loss_type: min_snr_gamma_eps  # eps/min_snr_gamma_eps/min_snr_gamma_x0/x0/x0+g/
   batch_size: 8
-  # n_epochs: 1000000
   n_epochs: 10000
   n_iters: 30001
   sample_freq: 500
@@ -16,7 +16,6 @@ eval:
   batch_size: 128
   early_end: 10
 
-
 sampling:
   batch_size: 100
   data_init: false
@@ -26,7 +25,7 @@ sampling:
   ssim: true
   fvd: true
   denoise: true
-  subsample: 1000
+  subsample: 50  # 采样步数 
   num_samples4fid: 10000
   num_samples4fvd: 10000
   inpainting: false
@@ -56,23 +55,24 @@ fast_fid:
   n_steps_each: 0
 
 test:
-  begin_ckpt: 18500
-  end_ckpt: 19000
+  begin_ckpt: 500
+  end_ckpt: 30000
   freq: 500
   batch_size: 128
-  ckpt: /home/VADiffusion/exp1/logs_lossX_wp1_wostd_norm_trian/checkpoint_18500.pth
+  ckpt_path: /home/VADiffusion/exp1/logs_lossE_DDIM50_trian2e_3_lrdecay/
+  ckpt: /home/VADiffusion/exp1/logs_lossE_DDIM50_trian2e_3_lrdecay/checkpoint_21500.pth
 
 data:
   dataset: "UCSD_ped2"
   image_size: 256
   # channels: 1
-  num_workers: 0
+  num_workers: 8
   num_digits: 2
   step_length: 0.1
   num_frames: 4
   num_frames_cond: 4
   num_frames_future: 0
-  prob_mask_cond: 0.0  # 0.5
+  prob_mask_cond: 0.5  # 0.5
   prob_mask_future: 0.0
   prob_mask_sync: false
 
@@ -86,7 +86,7 @@ model:
   motion_channels: 2
   recon_MV_pretrained: /home/VADiffusion/mv_ckpt/UCSD_ped2_mv_recon_stack_mv_123456/stackbest.pth
   depth: deep
-  version: DDPM  # DDIM/DDPM
+  version: DDIM  # DDIM/DDPM
   gamma: false   # 是否使用gamma分布去生成初始数据
   arch: unetmore
   type: v1
@@ -117,15 +117,15 @@ model:
   noise_in_cond: false
   output_all_frames: false # could be useful especially for 3d models
   cond_emb: false
-  spade: false  # 是否采用空间自适应归一化 
+  spade: true  # 是否采用空间自适应归一化 
   spade_dim: 128
   pretrained: /home/VADiffusion/exp1/logs_lossX_wp1_ddpm_residual/checkpoint_9000.pth
 
 optim:
   weight_decay: 0.000
   optimizer: "Adam"
-  lr: 0.00005
-  warmup: 1000
+  lr: 0.0005
+  warmup: 1000   # warm up step
   beta1: 0.9
   amsgrad: false
   eps: 0.00000001

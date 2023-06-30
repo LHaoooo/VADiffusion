@@ -17,6 +17,15 @@ def get_optimizer(config, parameters):
 def warmup_lr(optimizer, step, warmup, max_lr):
     if step > warmup:
         return max_lr
+
+    # lr multistep decay
+    # if step > warmup and step<3*warmup:
+    #     return max_lr
+    # elif step >=3*warmup and step<5*warmup:
+    #     return max_lr/2
+    # elif step >=5*warmup:
+    #     return max_lr/4
+    
     lr = max_lr * min(float(step) / max(warmup, 1), 1.0)
     for param_group in optimizer.param_groups:
         param_group["lr"] = lr

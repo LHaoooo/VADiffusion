@@ -43,8 +43,8 @@ class EMAHelper(object):
     def state_dict(self):
         return self.shadow
 
-    def load_state_dict(self, loadstate_dict):
-        self.shadow = loadstate_dict
+    def load_state_dict(self, state_dict):
+        self.shadow = state_dict
 
 
 # import glob, torch, tqdm

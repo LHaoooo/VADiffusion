@@ -209,7 +209,7 @@ class NCSNpp(nn.Module):
 
     # Downsampling block
 
-    modules.append(conv3x3(self.channels + self.num_hist*(self.config.model.sampled_mv_num*self.config.model.motion_channels+ self.channels), nf))
+    modules.append(conv3x3(self.channels + self.num_hist*(self.config.model.sampled_mv_num*self.config.model.motion_channels+ self.channels), nf)) # ucsd
     hs_c = [nf]
 
     in_ch = nf
@@ -415,8 +415,6 @@ class NCSNpp(nn.Module):
 
     return h
 
-
-
 class SPADE_NCSNpp(nn.Module):
   """NCSN++ model with SPADE normalization"""
 
@@ -561,7 +559,8 @@ class SPADE_NCSNpp(nn.Module):
 
     # Downsampling block
 
-    modules.append(conv3x3(channels*self.num_frames, nf))
+    # modules.append(conv3x3(self.channels + self.num_hist*(self.config.model.sampled_mv_num*self.config.model.motion_channels+ self.channels), nf))
+    modules.append(conv3x3(self.channels, nf))
     hs_c = [nf]
 
     in_ch = nf
@@ -612,7 +611,9 @@ class SPADE_NCSNpp(nn.Module):
     assert not hs_c
 
     modules.append(layerspp.get_act_norm(act=act, act_emb=act, norm='spade', ch=in_ch, is3d=self.is3d, n_frames=self.num_frames, num_frames_cond=num_frames_cond,
-                                         cond_ch=num_frames_cond*channels, spade_dim=spade_dim, cond_conv=conv3x3, cond_conv1=conv1x1_cond))
+                                         cond_ch=self.num_hist*(self.config.model.sampled_mv_num*self.config.model.motion_channels+ self.channels), spade_dim=spade_dim, cond_conv=conv3x3, cond_conv1=conv1x1_cond))
+    # modules.append(layerspp.get_act_norm(act=act, act_emb=act, norm='spade', ch=in_ch, is3d=self.is3d, n_frames=self.num_frames, num_frames_cond=num_frames_cond,
+    #                                      cond_ch=num_frames_cond*channels, spade_dim=spade_dim, cond_conv=conv3x3, cond_conv1=conv1x1_cond))
     modules.append(conv3x3(in_ch, channels*self.num_frames, init_scale=init_scale))
 
     self.all_modules = nn.ModuleList(modules)
