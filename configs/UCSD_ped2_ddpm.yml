@@ -1,6 +1,6 @@
 training:
   L1: false
-  loss_type: min_snr_gamma_eps  # eps/min_snr_gamma_eps/min_snr_gamma_x0/x0/x0+g/
+  loss_type: eps  # eps/min_snr_gamma_eps/min_snr_gamma_x0/x0/x0+g/
   batch_size: 8
   n_epochs: 10000
   n_iters: 30001
@@ -14,7 +14,7 @@ eval:
   wp: 1
   gt_dir: ./data
   batch_size: 128
-  early_end: 10
+  early_end: 30
 
 sampling:
   batch_size: 100
@@ -59,7 +59,7 @@ test:
   end_ckpt: 30000
   freq: 500
   batch_size: 128
-  ckpt_path: /home/VADiffusion/exp1/logs_lossE_DDIM50_trian2e_3_lrdecay/
+  ckpt_path: /home/VADiffusion/exp1/logs_lossX_DDIM50_mask0.1_train/
   ckpt: /home/VADiffusion/exp1/logs_lossE_DDIM50_trian2e_3_lrdecay/checkpoint_21500.pth
 
 data:
@@ -72,7 +72,7 @@ data:
   num_frames: 4
   num_frames_cond: 4
   num_frames_future: 0
-  prob_mask_cond: 0.5  # 0.5
+  prob_mask_cond: 0.0  # 0.5
   prob_mask_future: 0.0
   prob_mask_sync: false
 
@@ -117,7 +117,7 @@ model:
   noise_in_cond: false
   output_all_frames: false # could be useful especially for 3d models
   cond_emb: false
-  spade: true  # 是否采用空间自适应归一化 
+  spade: false  # 是否采用空间自适应归一化 
   spade_dim: 128
   pretrained: /home/VADiffusion/exp1/logs_lossX_wp1_ddpm_residual/checkpoint_9000.pth
 

@@ -533,7 +533,7 @@ class SPADE_NCSNpp(nn.Module):
                                       pseudo3d=self.pseudo3d,
                                       n_frames=self.num_frames,
                                       num_frames_cond=num_frames_cond,
-                                      cond_ch=num_frames_cond*channels,
+                                      cond_ch=self.num_hist*(self.config.model.sampled_mv_num*self.config.model.motion_channels+ self.channels),
                                       spade_dim=spade_dim,
                                       act3d=True) # Activation here as per https://arxiv.org/abs/1809.04096
 
@@ -550,7 +550,7 @@ class SPADE_NCSNpp(nn.Module):
                                       pseudo3d=self.pseudo3d,
                                       n_frames=self.num_frames,
                                       num_frames_cond=num_frames_cond,
-                                      cond_ch=num_frames_cond*channels,
+                                      cond_ch=self.num_hist*(self.config.model.sampled_mv_num*self.config.model.motion_channels+ self.channels),
                                       spade_dim=spade_dim,
                                       act3d=True) # Activation here as per https://arxiv.org/abs/1809.04096
 
@@ -610,6 +610,7 @@ class SPADE_NCSNpp(nn.Module):
 
     assert not hs_c
 
+    # print('in_ch:',in_ch) # 16
     modules.append(layerspp.get_act_norm(act=act, act_emb=act, norm='spade', ch=in_ch, is3d=self.is3d, n_frames=self.num_frames, num_frames_cond=num_frames_cond,
                                          cond_ch=self.num_hist*(self.config.model.sampled_mv_num*self.config.model.motion_channels+ self.channels), spade_dim=spade_dim, cond_conv=conv3x3, cond_conv1=conv1x1_cond))
     # modules.append(layerspp.get_act_norm(act=act, act_emb=act, norm='spade', ch=in_ch, is3d=self.is3d, n_frames=self.num_frames, num_frames_cond=num_frames_cond,
@@ -664,7 +665,9 @@ class SPADE_NCSNpp(nn.Module):
     # Downsampling block
     input_pyramid = None
 
-    x = x.contiguous()
+    x = x.contiguous().float()
+    cond = cond.float()
+    # x = x.to(torch.float32)
     hs = [modules[m_idx](x)]
     m_idx += 1
     for i_level in range(self.num_resolutions):

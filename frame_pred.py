@@ -25,7 +25,7 @@ def parse_args_and_config():
     parser.add_argument('--data_path', type=str, default='/home/Dataset/UCSD_ped/UCSD_ped2',
                         help='The basic Path to the dataset')
     parser.add_argument('--seed', type=int, default=123456, help='Random seed')
-    parser.add_argument('--device_ids', type=str, default='0,2,3,6', help='the ids of devices used')
+    parser.add_argument('--device_ids', type=str, default='1,2,3,6', help='the ids of devices used')
     parser.add_argument('--exp', type=str, default='exp1',
                          help='Path for saving running related data.Change the name to the different exp')
     parser.add_argument('--comment', type=str, default='', help='A string for experiment comment')
@@ -47,7 +47,7 @@ def parse_args_and_config():
         config = yaml.load(f, Loader=yaml.FullLoader)
 
     # args.log_path = os.path.join(args.exp, 'logs_lossE_test')
-    args.log_path = os.path.join(args.exp, 'logs_lossE_DDIM50_mask_traintttt')
+    args.log_path = os.path.join(args.exp, 'logs_lossE_DDIM50_trainandeval')
     # Override with config_mod
     # 当命令行使用了--config时，覆盖config文件中的相关参数
     for val in args.config_mod:

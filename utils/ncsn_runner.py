@@ -386,7 +386,7 @@ class NCSNRunner():
                 test_scorenet = None
                 # Get test_scorenet
                 # if step == 1 or (step >= 5000 and step % self.config.training.val_freq == 0):
-                if step >= 30000 and step % self.config.training.val_freq == 0 :
+                if step >= 500 and step % self.config.training.val_freq == 0 :
 
                     if self.config.model.ema:
                         test_scorenet = ema_helper.ema_copy(scorenet)
@@ -397,7 +397,7 @@ class NCSNRunner():
              
                 # Validation
                 # if step == 1 or (step >= 5000 and step % self.config.training.val_freq == 0):
-                if step >= 30000 and step % self.config.training.val_freq == 0 :
+                if step >= 500 and step % self.config.training.val_freq == 0 :
                     dataset_name = self.config.data.dataset
                     
                     score_func = nn.MSELoss(reduction="none")
@@ -409,6 +409,9 @@ class NCSNRunner():
                     for k in range(len(video_list)):
                         m=[0 for i in range((METADATA[dataset_name]["testing_frames_cnt"])[k])]
                         frame_scores.append(m)
+                    
+                    pred_frames = []
+                    GT_frames = []
 
                     for test_data in tqdm(test_loader, desc="Eval:", total=len(test_loader)):
                         test_X, sample_mvs_t, pred_frame_test, v_name, mv_last = test_data
@@ -478,10 +481,12 @@ class NCSNRunner():
                             
                             pred = all_samples[-1].reshape(all_samples[-1].shape[0], self.config.model.ImgChnNum*self.config.model.clip_pred,
                                                         self.config.data.image_size, self.config.data.image_size).to(self.config.device)
-
-                            save_image(test_X[0], os.path.join(self.args.log_sample_path, 'X0_{}.png'.format(step)))
-                            save_image(pred[0], os.path.join(self.args.log_sample_path, 'pred0_{}.png'.format(step)))
-                            self.error_map(test_X[0],pred[0],os.path.join(self.args.log_sample_path, 'residual0_{}.png'.format(step)))
+                            for num in range(len(test_X)):
+                                GT_frames.append(test_X[num])
+                                pred_frames.append(pred[num])
+                            # save_image(test_X[0], os.path.join(self.args.log_sample_path, 'X0_{}.png'.format(step)))
+                            # save_image(pred[0], os.path.join(self.args.log_sample_path, 'pred0_{}.png'.format(step)))
+                            # self.error_map(test_X[0],pred[0],os.path.join(self.args.log_sample_path, 'residual0_{}.png'.format(step)))
                             # residualframe = test_X[0] - pred[0]
                             # save_image(residualframe, os.path.join(self.args.log_sample_path, 'residual0_{}.png'.format(step)))
                             del all_samples
@@ -498,9 +503,8 @@ class NCSNRunner():
                         # print("mv_socre:",loss_mv_val)
                         # print("frame_score:",loss_frame_val)
                         # PSNR 
-                        psnr_t = 10*np.log10((np.max(test_X.cpu().numpy())**2)/(loss_frame_val/(pred.shape[-1]**2)))
-                        loss_frame_val = 1 - (psnr_t-np.min(psnr_t))/(np.max(psnr_t)-np.min(psnr_t))
-
+                        # psnr_t = 10*np.log10((np.max(pred.cpu().numpy())**2)/(loss_frame_val/(pred.shape[-1]**2)))
+                        # loss_frame_val = 1 - (psnr_t-np.min(psnr_t))/(np.max(psnr_t)-np.min(psnr_t))
                         loss_mv_val = loss_mv_val/(mv_recon_t.shape[-1]**2)
 
                         score_final1 = self.config.eval.wr*loss_mv_val + self.config.eval.wp*loss_frame_val  # 算这个的mean和std
@@ -597,6 +601,12 @@ class NCSNRunner():
                         best_auc = auc
                         torch.save(states, os.path.join(self.args.log_path, "best.pth"))
                         logging.info(f"Saving best checkpoint.pth in {self.args.log_path}")
+                        for i in range(len(GT_frames)):
+                            save_image(GT_frames[i], os.path.join(self.args.log_sample_path, 'X{}.png'.format(i)))
+                            save_image(pred_frames[i], os.path.join(self.args.log_sample_path, 'pred{}.png'.format(i)))
+                            self.error_map(GT_frames[i], pred_frames[i],os.path.join(self.args.log_sample_path, 'residual{}.png'.format(i)))
+                            # save_image(residual_frames[i], os.path.join(self.args.log_sample_path, 'residual{}.png'.format(i)))
+                        print('the figs are saved')
                         val_times = 0
                     else:
                         val_times += 1
@@ -770,13 +780,9 @@ class NCSNRunner():
                 loss_frame_val = np.sum(np.sum(np.sum(loss_frame_val, axis=3), axis=2), axis=1)
 
                 # PSNR 
-                psnr_t = 10*np.log10((np.max(test_X.cpu().numpy())**2)/(loss_frame_val/(pred.shape[-1]**2)))
-                loss_frame_val = 1 - (psnr_t-np.min(psnr_t))/(np.max(psnr_t)-np.min(psnr_t))
-
+                # psnr_t = 10*np.log10((np.max(pred.cpu().numpy())**2)/(loss_frame_val/(pred.shape[-1]**2)))
+                # loss_frame_val = 1 - (psnr_t-np.min(psnr_t))/(np.max(psnr_t)-np.min(psnr_t))
                 loss_mv_val = loss_mv_val/(mv_recon_t.shape[-1]**2)
-
-                # print("mv_socre:",loss_mv_val)
-                # print("frame_score:",loss_frame_val)
 
                 score_final1 = self.config.eval.wr*loss_mv_val + self.config.eval.wp*loss_frame_val  # 算这个的mean和std
                 
@@ -996,14 +1002,14 @@ class NCSNRunner():
                 loss_mv_val = np.sum(np.sum(np.sum(loss_mv_val, axis=3), axis=2), axis=1)  # 使用滑动窗要注释
                 loss_frame_val = np.sum(np.sum(np.sum(loss_frame_val, axis=3), axis=2), axis=1)
 
-                score_final1 = self.config.eval.wr*loss_mv_val + self.config.eval.wp*loss_frame_val  # 算这个的mean和std
-
                 # PSNR 
-                psnr_t = 10*np.log10((np.max(test_X.cpu().numpy())**2)/(loss_frame_val/(pred.shape[-1]**2)))
+                # psnr_t = 10*np.log10((np.max(pred.cpu().numpy())**2)/(loss_frame_val/(pred.shape[-1]**2)))
+                # loss_frame_val = 1 - (psnr_t-np.min(psnr_t))/(np.max(psnr_t)-np.min(psnr_t))
                 del pred
-                loss_frame_val = 1 - (psnr_t-np.min(psnr_t))/(np.max(psnr_t)-np.min(psnr_t))
-
                 loss_mv_val = loss_mv_val/(mv_recon_t.shape[-1]**2)
+                # loss_frame_val = loss_frame_val/(test_X.shape[-1]**2)
+
+                score_final1 = self.config.eval.wr*loss_mv_val + self.config.eval.wp*loss_frame_val  # 算这个的mean和std
                 
                 # mv_last=np.array(mv_last)
                 # weight_numpy_all=self.mv_area_weight(mv_last) #Batch

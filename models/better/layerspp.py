@@ -510,6 +510,8 @@ class get_act_norm(nn.Module): # order is norm -> act
       affine = True
 
     if norm == 'spade':
+      # print(ch // n_frames)  # 16
+      # print(cond_ch) # 4
       self.Norm_0 = MySPADE(norm_nc=(ch // n_frames) if is3d else ch, label_nc=cond_ch, param_free_norm_type='group', act=act, conv=cond_conv,
                             spade_dim=spade_dim, is3d=is3d, num_frames=n_frames, num_frames_cond=num_frames_cond, conv1x1=cond_conv1)
     else:
