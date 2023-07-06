@@ -4,7 +4,8 @@ training:
   batch_size: 8
   n_epochs: 10000
   n_iters: 30001
-  sample_freq: 500
+  save_freq: 500
+  val_step: 500
   val_freq: 500
   log_freq: 100
   log_all_sigmas: false

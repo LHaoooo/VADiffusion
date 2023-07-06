@@ -221,15 +221,15 @@ class NCSNRunner():
         logging.info(f"Number of trainable parameters: {count_training_parameters(scorenet)}")
 
         # MV recon net
-        recon_MV_dict = torch.load(self.config.model.recon_MV_pretrained)["model_state_dict"]
-        recon_AE = reconAE(num_in_ch=self.config.model.motion_channels*self.config.model.sampled_mv_num, 
-                            seq_len=1, features_root=self.config.model.feature_root,
-                            skip_ops=self.config.model.skip_ops).to(self.config.device)
-        recon_AE = torch.nn.DataParallel(recon_AE)
-        recon_AE.load_state_dict(recon_MV_dict, False)
-        for param in recon_AE.parameters():
-            param.requires_grad = False
-        recon_AE.eval()
+        # recon_MV_dict = torch.load(self.config.model.recon_MV_pretrained)["model_state_dict"]
+        # recon_AE = reconAE(num_in_ch=self.config.model.motion_channels*self.config.model.sampled_mv_num, 
+        #                     seq_len=1, features_root=self.config.model.feature_root,
+        #                     skip_ops=self.config.model.skip_ops).to(self.config.device)
+        # recon_AE = torch.nn.DataParallel(recon_AE)
+        # recon_AE.load_state_dict(recon_MV_dict, False)
+        # for param in recon_AE.parameters():
+        #     param.requires_grad = False
+        # recon_AE.eval()
 
         optimizer = get_optimizer(self.config, scorenet.parameters())
         # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[500,700,800], gamma=0.5)
@@ -308,26 +308,36 @@ class NCSNRunner():
                 # print(cond.shape)  # [32, 12, 256, 256]
                 sample_mvs = sample_mvs.to(self.config.device)
 
-                # MV recon
-                mv_recon = torch.zeros_like(sample_mvs)
+                # predonly
                 y_ch = self.config.model.motion_channels*self.config.model.sampled_mv_num
-                for j in range(self.config.model.clip_hist):
-                    _, reconAE_out = recon_AE(sample_mvs[:, y_ch * j:y_ch * (j + 1), :, :])
-                    mv_recon[:, y_ch * j:y_ch * (j + 1), :, :] = reconAE_out
-                # mv_recon = mv_recon - sample_mvs  # mv_residual
                 upsample=nn.Upsample(scale_factor=4, mode='nearest')
-                recon_mvs = upsample(mv_recon)
-                # recon_mvs = F.interpolate(mv_recon, size=(256, 256), mode='bilinear', align_corners=False)
-                # print("samplemv's shape: ",recon_mvs.shape)  # 8,24,256,256
-                recon_mvs_split = recon_mvs.view(recon_mvs.shape[0],4,6,256,256)
-
-                # cond_ip = np.zeros((recon_mvs.shape[0], 28,256,256))
-                cond_ip = np.zeros((recon_mvs.shape[0], 4*(y_ch+self.config.model.ImgChnNum),256,256))
+                sample_mvs_up = upsample(sample_mvs)
+                sample_mvs_up_split = sample_mvs_up.view(sample_mvs_up.shape[0],4,6,256,256)
+                cond_ip = np.zeros((sample_mvs_up.shape[0], 4*(y_ch+self.config.model.ImgChnNum),256,256))
                 for i in range(4):  # 插
-                    temp = recon_mvs_split[:,i,:,:,:]
-                    # print("temp shape: ", temp.shape)  # 8,6,256,256
-                    temp = temp.squeeze(1)  
+                    temp = sample_mvs_up_split[:,i,:,:,:]  
                     cond_ip[:,(y_ch+self.config.model.ImgChnNum)*i:(y_ch+self.config.model.ImgChnNum)*(i+1),:,:] = torch.cat((cond[:,i*self.config.model.ImgChnNum:(i+1)*self.config.model.ImgChnNum,:,:].cpu(), temp.cpu()), dim =1)
+
+                # MV recon
+                # mv_recon = torch.zeros_like(sample_mvs)
+                # y_ch = self.config.model.motion_channels*self.config.model.sampled_mv_num
+                # for j in range(self.config.model.clip_hist):
+                #     _, reconAE_out = recon_AE(sample_mvs[:, y_ch * j:y_ch * (j + 1), :, :])
+                #     mv_recon[:, y_ch * j:y_ch * (j + 1), :, :] = reconAE_out
+                # # mv_recon = mv_recon - sample_mvs  # mv_residual
+                # upsample=nn.Upsample(scale_factor=4, mode='nearest')
+                # recon_mvs = upsample(mv_recon)
+                # # recon_mvs = F.interpolate(mv_recon, size=(256, 256), mode='bilinear', align_corners=False)
+                # # print("samplemv's shape: ",recon_mvs.shape)  # 8,24,256,256
+                # recon_mvs_split = recon_mvs.view(recon_mvs.shape[0],4,6,256,256)
+
+                # # cond_ip = np.zeros((recon_mvs.shape[0], 28,256,256))
+                # cond_ip = np.zeros((recon_mvs.shape[0], 4*(y_ch+self.config.model.ImgChnNum),256,256))
+                # for i in range(4):  # 插
+                #     temp = recon_mvs_split[:,i,:,:,:]
+                #     # print("temp shape: ", temp.shape)  # 8,6,256,256
+                #     temp = temp.squeeze(1)  
+                #     cond_ip[:,(y_ch+self.config.model.ImgChnNum)*i:(y_ch+self.config.model.ImgChnNum)*(i+1),:,:] = torch.cat((cond[:,i*self.config.model.ImgChnNum:(i+1)*self.config.model.ImgChnNum,:,:].cpu(), temp.cpu()), dim =1)
 
                 # cond_ip = torch.cat((cond, recon_mvs), dim =1)  # 非插
                 cond_ip = torch.from_numpy(cond_ip).to(self.config.device)  # 非插时注释
@@ -370,7 +380,7 @@ class NCSNRunner():
                     break
 
                 # Save model
-                if (step % 500 == 0 and step != 0):
+                if (step % self.config.training.save_freq == 0 and step != 0):
                     states = [
                         scorenet.state_dict(),
                         optimizer.state_dict(),
@@ -385,8 +395,8 @@ class NCSNRunner():
                 
                 test_scorenet = None
                 # Get test_scorenet
-                # if step == 1 or (step >= 5000 and step % self.config.training.val_freq == 0):
-                if step >= 500 and step % self.config.training.val_freq == 0 :
+                # if step == 1 or (step >= self.config.training.val_step and step % self.config.training.val_freq):
+                if step >= self.config.training.val_step and step % self.config.training.val_freq == 0 :
 
                     if self.config.model.ema:
                         test_scorenet = ema_helper.ema_copy(scorenet)
@@ -396,8 +406,8 @@ class NCSNRunner():
                     test_scorenet.eval()
              
                 # Validation
-                # if step == 1 or (step >= 5000 and step % self.config.training.val_freq == 0):
-                if step >= 500 and step % self.config.training.val_freq == 0 :
+                # if step == 1 or (step >= self.config.training.val_step and step % self.config.training.val_freq):
+                if step >= self.config.training.val_step and step % self.config.training.val_freq == 0 :
                     dataset_name = self.config.data.dataset
                     
                     score_func = nn.MSELoss(reduction="none")
@@ -421,24 +431,40 @@ class NCSNRunner():
                                                                             prob_mask_future=0.0,
                                                                             conditional=conditional)
                         sample_mvs_t = sample_mvs_t.to(self.config.device)
-                        # MV recon
-                        mv_recon_t = torch.zeros_like(sample_mvs_t)
+                        # predonly
                         y_ch = self.config.model.motion_channels*self.config.model.sampled_mv_num
-                        
-                        for j in range(self.config.model.clip_hist):
-                            _, reconAE_out = recon_AE(sample_mvs_t[:, y_ch * j:y_ch * (j + 1), :, :])
-                            mv_recon_t[:, y_ch * j:y_ch * (j + 1), :, :] = reconAE_out
-                        # mv_recon_t = mv_recon_t - sample_mvs_t  # mv_residual
                         upsample=nn.Upsample(scale_factor=4, mode='nearest')
-                        recon_mvs_t1 = upsample(mv_recon_t)
-                        # recon_mvs_t1 = F.interpolate(mv_recon_t, size=(256, 256), mode='bilinear', align_corners=False)
-                        # print("samplemv's shape: ",recon_mvs_t.shape)
+                        sample_mvs_t_up = upsample(sample_mvs_t)
+                        sample_mvs_t_up_split = sample_mvs_t_up.view(sample_mvs_t_up.shape[0],4,6,256,256)
+                        cond_ip_t = np.zeros((sample_mvs_t_up.shape[0], 4*(y_ch+self.config.model.ImgChnNum),256,256))
+                        for i in range(4):  # 插
+                            temp = sample_mvs_t_up_split[:,i,:,:,:]  
+                            cond_ip_t[:,(y_ch+self.config.model.ImgChnNum)*i:(y_ch+self.config.model.ImgChnNum)*(i+1),:,:] = torch.cat((test_cond[:,i*self.config.model.ImgChnNum:(i+1)*self.config.model.ImgChnNum,:,:].cpu(), temp.cpu()), dim =1)
+
+                        # MV recon
+                        # mv_recon_t = torch.zeros_like(sample_mvs_t)
+                        # y_ch = self.config.model.motion_channels*self.config.model.sampled_mv_num
                         
-                        recon_mvs_t_split = recon_mvs_t1.view(recon_mvs_t1.shape[0],self.config.model.clip_hist,y_ch,256,256)
-                        cond_ip_t = np.zeros((recon_mvs_t1.shape[0], 4*(y_ch+self.config.model.ImgChnNum),256,256))
+                        # for j in range(self.config.model.clip_hist):
+                        #     _, reconAE_out = recon_AE(sample_mvs_t[:, y_ch * j:y_ch * (j + 1), :, :])
+                        #     mv_recon_t[:, y_ch * j:y_ch * (j + 1), :, :] = reconAE_out
+                        # # mv_recon_t = mv_recon_t - sample_mvs_t  # mv_residual
+                        # upsample=nn.Upsample(scale_factor=4, mode='nearest')
+                        # recon_mvs_t1 = upsample(mv_recon_t)
+                        # # recon_mvs_t1 = F.interpolate(mv_recon_t, size=(256, 256), mode='bilinear', align_corners=False)
+                        # # print("samplemv's shape: ",recon_mvs_t.shape)
+                        # recon_mvs_t_split = recon_mvs_t1.view(recon_mvs_t1.shape[0],self.config.model.clip_hist,y_ch,256,256)
+                        # cond_ip_t = np.zeros((recon_mvs_t1.shape[0], 4*(y_ch+self.config.model.ImgChnNum),256,256))
+                        # for i in range(4):  # 插帧
+                        #     temp = recon_mvs_t_split[:,i,:,:,:]
+                        #     cond_ip_t[:,(y_ch+self.config.model.ImgChnNum)*i:(y_ch+self.config.model.ImgChnNum)*(i+1),:,:] = torch.cat((test_cond[:,i*self.config.model.ImgChnNum:(i+1)*self.config.model.ImgChnNum,:,:].cpu(), temp.cpu()), dim =1)
+                        
+                        # cond_ip_t = torch.cat((test_cond, recon_mvs_t1), dim =1)  # 非插
+                        cond_ip_t = torch.from_numpy(cond_ip_t).to(self.config.device)  # 非插要注释
 
                         # Initial samples
-                        n_init_samples = recon_mvs_t1.shape[0]
+                        n_init_samples = sample_mvs_t.shape[0]
+                        # n_init_samples = recon_mvs_t1.shape[0]
                         channel_num = self.config.model.ImgChnNum*self.config.model.clip_pred
                         init_samples_shape = (n_init_samples, channel_num, self.config.data.image_size, self.config.data.image_size)
                         # print("init_sample_shape:", init_samples_shape)
@@ -450,12 +476,7 @@ class NCSNRunner():
                                 init_samples = z - used_k*used_theta # we don't scale here
                             else:
                                 init_samples = torch.randn(init_samples_shape, device=self.config.device)  # 使用高斯分布随机产生
-                        for i in range(4):  # 插帧
-                            temp = recon_mvs_t_split[:,i,:,:,:]
-                            cond_ip_t[:,(y_ch+self.config.model.ImgChnNum)*i:(y_ch+self.config.model.ImgChnNum)*(i+1),:,:] = torch.cat((test_cond[:,i*self.config.model.ImgChnNum:(i+1)*self.config.model.ImgChnNum,:,:].cpu(), temp.cpu()), dim =1)
                         
-                        # cond_ip_t = torch.cat((test_cond, recon_mvs_t1), dim =1)  # 非插
-                        cond_ip_t = torch.from_numpy(cond_ip_t).to(self.config.device)  # 非插要注释
 
                         with torch.no_grad():
                             test_hook = None
@@ -492,12 +513,12 @@ class NCSNRunner():
                             del all_samples
                         
                         upsample=nn.Upsample(scale_factor=4, mode='nearest')
-                        loss_mv_val = score_func(recon_mvs_t1, upsample(sample_mvs_t)).cpu().data.numpy()# 128,24,256,256
+                        # loss_mv_val = score_func(recon_mvs_t1, upsample(sample_mvs_t)).cpu().data.numpy()# 128,24,256,256
                         loss_frame_val = score_func(pred,test_X).cpu().data.numpy()# 128,1,256,256
                         loss_frame_val = np.mean(loss_frame_val, axis=1) # 128,256,256
                         loss_frame_val = np.expand_dims(loss_frame_val,axis=1) # 128,1,256,256
 
-                        loss_mv_val = np.sum(np.sum(np.sum(loss_mv_val, axis=3), axis=2), axis=1)  # 使用滑动窗时要注释掉
+                        # loss_mv_val = np.sum(np.sum(np.sum(loss_mv_val, axis=3), axis=2), axis=1)  # 使用滑动窗时要注释掉
                         loss_frame_val = np.sum(np.sum(np.sum(loss_frame_val, axis=3), axis=2), axis=1)
 
                         # print("mv_socre:",loss_mv_val)
@@ -505,10 +526,11 @@ class NCSNRunner():
                         # PSNR 
                         # psnr_t = 10*np.log10((np.max(pred.cpu().numpy())**2)/(loss_frame_val/(pred.shape[-1]**2)))
                         # loss_frame_val = 1 - (psnr_t-np.min(psnr_t))/(np.max(psnr_t)-np.min(psnr_t))
-                        loss_mv_val = loss_mv_val/(mv_recon_t.shape[-1]**2)
 
-                        score_final1 = self.config.eval.wr*loss_mv_val + self.config.eval.wp*loss_frame_val  # 算这个的mean和std
-                        
+                        # loss_mv_val = loss_mv_val/(mv_recon_t.shape[-1]**2)
+
+                        # score_final1 = self.config.eval.wr*loss_mv_val + self.config.eval.wp*loss_frame_val  # 算这个的mean和std
+                        score_final1 = loss_frame_val
                         # 二阶导
                         # mv_last=np.array(mv_last)
                         # weight_numpy_all=self.mv_area_weight(mv_last) #Batch
