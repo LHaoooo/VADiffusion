@@ -35,7 +35,6 @@ def img_batch_tensor2numpy(img_batch):
 def clip_and_scale(img, size):
     return (img * (127.5 / size)).astype(np.int32)
 
-###读取yuv的各分量
 def readYuvFile(filename,width,height,frame_num,ImgChnNum) :
     fp=open(filename,'rb')
     uv_width=width//2
