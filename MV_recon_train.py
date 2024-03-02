@@ -37,13 +37,13 @@ def main():
         raise EnvironmentError('not find GPU device for training.')
     
     world_size = torch.cuda.device_count()
-    args.batch_size *= world_size  # 多卡batchsize/lr要是单卡的多倍
+    args.batch_size *= world_size
     args.lr *= world_size
     print("args_agument:",args)
 
-    os.environ['PYTHONHASHSEED'] = str(args.seed)  # 为了禁止hash随机化，使得实验可复现。
-    torch.manual_seed(args.seed)     # 为CPU设置随机种子
-    torch.cuda.manual_seed_all(args.seed)   # 为所有GPU设置随机种子（多块GPU）
+    os.environ['PYTHONHASHSEED'] = str(args.seed)  
+    torch.manual_seed(args.seed)    
+    torch.cuda.manual_seed_all(args.seed)   
     # np.random.seed(seed)  # Numpy module.
     # random.seed(seed)  # Python random module.
     torch.backends.cudnn.benchmark = False
@@ -89,19 +89,12 @@ def main():
         print('pretrained models loaded!', epoch_last)
     
     writer = SummaryWriter(paths["log_dir"])
-    # copy config file
-    # shutil.copyfile(config_file,os.path.join(paths["log_dir"], "recon_cfg.yaml"))
 
     # Training
     best_auc = -1
-    # trainset_yuvroot = os.path.join(args.dataset_base_dir, "train_recyuv400/")
-    # testset_yuvroot = os.path.join(args.dataset_base_dir, "test_recyuv400/")
 
-    # trainset_mvroot = os.path.join(args.dataset_base_dir,  "trainmv_txt/")
-    # testset_mvroot = os.path.join(args.dataset_base_dir,  "testmv_txt/")
-
-    trainset_yuvroot = os.path.join(args.dataset_base_dir, "train19_recyuv/")
-    testset_yuvroot = os.path.join(args.dataset_base_dir, "test19_recyuv/")
+    trainset_yuvroot = os.path.join(args.dataset_base_dir, "train_recyuv400/")
+    testset_yuvroot = os.path.join(args.dataset_base_dir, "test_recyuv400/")
 
     trainset_mvroot = os.path.join(args.dataset_base_dir,  "trainmv_txt/")
     testset_mvroot = os.path.join(args.dataset_base_dir,  "testmv_txt/")
@@ -119,7 +112,7 @@ def main():
 
             sample_frames, sample_mvs,_,_,_ = train_data
             print(sample_frames.shape)
-            print(sample_mvs.shape) # 128*6*64*64 在训练的时候进行单个mv的重构，这样效果更好，在最后整体的模型中先挨个重建，再进行4个组合
+            print(sample_mvs.shape) # 128*6*64*64
             sample_mvs = sample_mvs.to(device)
 
             mv_target,out = model(sample_mvs)
@@ -175,7 +168,6 @@ def main():
                 if auc >= best_auc:
                     best_auc = auc
                     only_model_saver(model.state_dict(), os.path.join(paths["ckpt_dir"], "stackbest.pth"))
-                    # only_model_saver(model.state_dict(), os.path.join(paths["ckpt_dir"], "addbest.pth"))
 
                 writer.add_scalar("auc", auc, global_step=epoch + 1)
     writer.close()

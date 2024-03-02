@@ -20,12 +20,12 @@ from utils.ncsn_runner import NCSNRunner
 def parse_args_and_config():
     parser = argparse.ArgumentParser(description=globals()['__doc__'])
 
-    parser.add_argument('--config', type=str, default='/home/VADiffusion/configs/UCSD_ped2_ddpm.yml',
+    parser.add_argument('--config', type=str, default='/home/VADiffusion_v1/configs/Shanghaitech_ddpm.yml',  # Avenue_  UCSD_ped2_ Shanghaitech_
                         help='Path to the config file')
-    parser.add_argument('--data_path', type=str, default='/home/Dataset/UCSD_ped/UCSD_ped2',
+    parser.add_argument('--data_path', type=str, default='/home/Dataset/shanghaitech',  # Avenue UCSD_ped/UCSD_ped2 shanghaitech
                         help='The basic Path to the dataset')
     parser.add_argument('--seed', type=int, default=123456, help='Random seed')
-    parser.add_argument('--device_ids', type=str, default='1,2,3,6', help='the ids of devices used')
+    parser.add_argument('--device_ids', type=str, default='0,1,2,3,4,5,6,7', help='the ids of devices used')
     parser.add_argument('--exp', type=str, default='exp1',
                          help='Path for saving running related data.Change the name to the different exp')
     parser.add_argument('--comment', type=str, default='', help='A string for experiment comment')
@@ -37,19 +37,18 @@ def parse_args_and_config():
     parser.add_argument('--singletest', action='store_true', help='Whether to test the only model')
     parser.add_argument('--no_ema', action='store_true', help="Don't use Exponential Moving Average")
     parser.add_argument('--config_mod', nargs='*', type=str, default=[],
-                        help='Overrid config options, e.g., model.ngf=64 model.spade=True training.batch_size=32')   # 这表示可以在命令行中去修改config中的参数
+                        help='Overrid config options, e.g., model.ngf=64 model.spade=True training.batch_size=32')  
 
     args = parser.parse_args()
 
-    args.command = 'python ' + ' '.join(sys.argv)  # 包含了当前脚本的命令行调用方式及其所有参数，可以进行保存
+    args.command = 'python ' + ' '.join(sys.argv) 
     # parse config file
     with open(args.config, 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
 
-    # args.log_path = os.path.join(args.exp, 'logs_lossE_test')
-    args.log_path = os.path.join(args.exp, 'logs_lossE_DDIM50_trainandeval')
+    # args.log_path = os.path.join(args.exp, 'debug')
+    args.log_path = os.path.join(args.exp, 'logs_shanghai_test73_DDPM100')
     # Override with config_mod
-    # 当命令行使用了--config时，覆盖config文件中的相关参数
     for val in args.config_mod:
         val, config_val = val.split('=')
         config_type, config_name = val.split('.')
@@ -78,15 +77,15 @@ def parse_args_and_config():
     new_config = dict2namespace(config)
 
     if args.train:  # train
-        if not args.resume_training:  # 无预训练
-            if os.path.exists(args.log_path):  # 是否重写log文件
+        if not args.resume_training:  
+            if os.path.exists(args.log_path):  
                 overwrite = False
                 response = input(f"Folder {args.log_path} already exists.\nOverwrite? (Y/N)")
                 if response.upper() == 'Y':
                     overwrite = True
 
-                if overwrite:  # 覆盖
-                    shutil.rmtree(args.log_path)  # 删除指定目录及其包含的所有文件和子目录。)
+                if overwrite:
+                    shutil.rmtree(args.log_path)  
                     os.makedirs(args.log_path)
                 else:
                     print("Folder exists. Program halted.")
@@ -95,17 +94,16 @@ def parse_args_and_config():
                 os.makedirs(args.log_path)
 
             with open(os.path.join(args.log_path, 'config.yml'), 'w') as f:
-                yaml.dump(config, f, default_flow_style=False)  # 将Python字典config写入YAML文件的示例
+                yaml.dump(config, f, default_flow_style=False) 
 
             with open(os.path.join(args.log_path, 'args.yml'), 'w') as f:
-                yaml.dump(vars(args), f, default_flow_style=False)  # vars(args)将args对象转换为一个字典
+                yaml.dump(vars(args), f, default_flow_style=False)  
 
         # setup logger
-        level = getattr(logging, args.verbose.upper(), None)  # 控制日志级别
-        if not isinstance(level, int):  # ？？
+        level = getattr(logging, args.verbose.upper(), None)  
+        if not isinstance(level, int): 
             raise ValueError('level {} not supported'.format(args.verbose))
 
-        # 配置两个处理器和一个格式化器，然后获取默认的日志器（logger）并为其添加这两个处理器。
         handler1 = logging.StreamHandler()
         handler2 = logging.FileHandler(os.path.join(args.log_path, 'stdout.txt'))
         formatter = logging.Formatter('%(levelname)s - %(filename)s - %(asctime)s - %(message)s')
@@ -136,24 +134,13 @@ def parse_args_and_config():
     if torch.cuda.is_available():
         torch.cuda.manual_seed(args.seed)
         torch.cuda.manual_seed_all(args.seed)
-    torch.backends.cudnn.benchmark = False
+    # torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.enabled = True
+    torch.backends.cudnn.benchmark = True 
 
-    # return args, new_config, config_uncond
     return args, new_config
 
-'''
-将Python字典类型的配置文件转换为命名空间(namespace)类型的对象。
-具体来说,该函数将递归地遍历输入的字典类型config,
-对于每个键值对(key, value),
-将其转换为一个命名空间的属性，
-并将其赋值给一个命名空间对象namespace的对应属性。
-如果当前键对应的值仍然是一个字典，
-则递归地调用dict2namespace函数,将其转换为一个子命名空间,
-并将其赋值给当前命名空间对象的对应属性。
-
-e.g.可以使用config.model.ngf来访问配置文件中的model.ngf选项的值。
-'''
 def dict2namespace(config):
     namespace = argparse.Namespace()
     for key, value in config.items():
@@ -167,7 +154,7 @@ def dict2namespace(config):
 def main():
     args, config = parse_args_and_config()
     world_size = torch.cuda.device_count()
-    config.training.batch_size *= world_size  # 多卡batchsize/lr要是单卡的多倍
+    config.training.batch_size *= world_size 
     config.optim.lr *= world_size
     logging.info("{}".format(args))
     logging.info("Writing log file to {}".format(args.log_path))
@@ -185,9 +172,8 @@ def main():
     print("<" * 80)
 
     trainset_yuvroot=os.path.join(args.data_path, "train_recyuv400/")
-    testset_yuvroot=os.path.join(args.data_path,  "test_recyuv400/")  # uscd
-    # trainset_yuvroot=os.path.join(args.data_path, "train19_recyuv/")
-    # testset_yuvroot=os.path.join(args.data_path,  "test19_recyuv/")  # avenue
+    testset_yuvroot=os.path.join(args.data_path,  "test_recyuv400/") 
+
     trainset_mvroot=os.path.join(args.data_path,  "trainmv_txt/")
     testset_mvroot=os.path.join(args.data_path,  "testmv_txt/")
 

@@ -1,58 +1,40 @@
 training:
   L1: false
-  loss_type: eps  # min_snr_gamma_eps/x0/x0+g/v
-  batch_size: 8
+  loss_type: eps  # min_snr_gamma_eps/x0/x0+g/
+  batch_size: 4
   n_epochs: 10000
-  n_iters: 50001
-  save_freq: 1000
-  val_step: 500
-  val_freq: 1000
+  n_iters: 10001
+  save_freq: 1000  # 500
+  val_step: 1000  # 500
+  val_freq: 1000  # 500
   log_freq: 100
   log_all_sigmas: false
 
 eval:
-  wr: 0.01
-  wp: 1
+  wr: 0.1 #0.1 
+  wp: 0.9
   gt_dir: ./data
-  batch_size: 128
-  early_end: 10
+  batch_size: 128  # 128
+  early_end: 5 # 10
 
 sampling:
-  batch_size: 100
-  data_init: false
-  ckpt_id: 0
   final_only: true
-  fid: false
-  ssim: true
-  fvd: true
   denoise: true
-  subsample: 50
-  num_samples4fid: 10000
-  num_samples4fvd: 10000
-  inpainting: false
-  interpolation: false
-  n_interpolations: 15
-  consistent: true
+  subsample: 100
   step_lr: 0.0
   n_steps_each: 0
-  train: false
-  num_frames_pred: 20
   clip_before: true
-  max_data_iter: 100000
-  init_prev_t: -1.0 # if >0, we start next_frame at prev_frame starting with noise t=init_prev_t
-  one_frame_at_a_time: false
-  preds_per_test: 1
 
 test:
-  begin_ckpt: 500
-  end_ckpt: 46000
-  batch_size: 64
-  freq: 500
-  ckpt_path: /home/VADiffusion/exp2/logs_lossE
-  ckpt: /home/VADiffusion/exp2/logs_lossE/checkpoint_46000.pth
+  begin_ckpt: 1000
+  end_ckpt: 10001
+  batch_size: 128
+  freq: 1000
+  ckpt_path: /home/VADiffusion_v1/exp1/logs_avenue_train19_DDPM100
+  ckpt: 
 
 data:
-  dataset: "avenue"
+  dataset: "avenue"  # "shanghaitech" # kuaku s2t
   image_size: 256
   # channels: 1
   num_workers: 8
@@ -73,10 +55,10 @@ model:
   feature_root: 16
   skip_ops: [ "none", "none", "none","none"]
   motion_channels: 2
-  recon_MV_pretrained: /home/VADiffusion/mv_ckpt/avenue_mv_recon_stack_mv_123456/stackbest.pth
+  recon_MV_pretrained: /home/VADiffusion_v1/AMVbest.pth
   depth: deep
-  version: DDIM  # DDIM
-  gamma: false   # 是否使用gamma分布去生成初始数据
+  version: DDPM  # DDIM
+  gamma: false   
   arch: unetmore
   type: v1
   time_conditional: true
@@ -101,19 +83,19 @@ model:
     - 8
     - 16
     - 32 # can use only 16 for traditional
-  n_head_channels: 32 # -1 for traditional  64
+  n_head_channels: 16 # -1 for traditional  64 32
   conditional: true
   noise_in_cond: false
   output_all_frames: false # could be useful especially for 3d models
   cond_emb: false
-  spade: false  # 是否采用空间自适应归一化 
+  spade: false  
   spade_dim: 128
   pretrained: None
 
 optim:
   weight_decay: 0.000
   optimizer: "Adam"
-  lr: 0.0005
+  lr: 0.00005
   warmup: 1000
   beta1: 0.9
   amsgrad: false

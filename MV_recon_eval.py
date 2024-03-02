@@ -88,15 +88,15 @@ def evaluate(args, ckpt_path, testset_yuvroot,testset_mvroot,dataloader_test,bes
     model.load_state_dict(model_weights)
     print("load pre-trained success!")
 
-    score_func = nn.MSELoss(reduction="none")#no reduction will be applied.(维度不减少)
+    score_func = nn.MSELoss(reduction="none")#no reduction will be applied.
     #anomaly scores for each frame
     video_list = [name for name in os.listdir(testset_yuvroot)]
     video_list.sort()
     #print(video_list)
     frame_scores=[]
     for k in range(len(video_list)):
-        m=[0 for i in range((METADATA[dataset_name]["testing_frames_cnt"])[k])] # 给测试视频每一帧打分为0
-        frame_scores.append(m)  # 每一个视频的每一帧都是0
+        m=[0 for i in range((METADATA[dataset_name]["testing_frames_cnt"])[k])] 
+        frame_scores.append(m)  
     
     for ii, test_data in tqdm(enumerate(dataloader_test), desc="Eval: ", total=len(dataloader_test)):
         _, sample_mvs_test,pred_frame_test,v_name,_= test_data
@@ -104,20 +104,19 @@ def evaluate(args, ckpt_path, testset_yuvroot,testset_mvroot,dataloader_test,bes
 
         mv_target_test,out_test = model(sample_mvs_test)
         loss_of_test = score_func(out_test, mv_target_test).cpu().data.numpy()
-        scores = np.sum(np.sum(np.sum(loss_of_test, axis=3), axis=2), axis=1)  # 这个scores是关于MV重构误差的
-        print(scores)
+        scores = np.sum(np.sum(np.sum(loss_of_test, axis=3), axis=2), axis=1) 
+        # print(scores)
         # anomaly scores for each sample
         for i in range(len(scores)):
             video_index=video_list.index(v_name[i])
-            frame_scores[video_index][pred_frame_test[i]] = scores[i] ##the score of corresponding frame 重构MV是5个GOP中的最后一个GOP的MV，所以把这个分数传给最后一个GOP的I帧
-            # 也就是分数只有5,9,13,17这些帧有
+            frame_scores[video_index][pred_frame_test[i]] = scores[i] ##the score of corresponding frame
     # print(frame_scores)
     frame_scores2=[]
     for k in range(len(video_list)):
-        index=np.flatnonzero(frame_scores[k])##the index of no-zero 每个测试视频中MSE不是0的帧 也就是上面那些赋值了的I帧
+        index=np.flatnonzero(frame_scores[k])##the index of no-zero
         score_list=[frame_scores[k][j] for j in index]
-        score_list_final=frame_level_result(score_list)##The score of unsampled frames is the average of two adjacent sampled frames  给5,9,13,17之间的帧赋值，即6，7,8
-        frame_scores[k][index[0]:index[-1]+1]=score_list_final  # 把分数赋给所有帧
+        score_list_final=frame_level_result(score_list)##The score of unsampled frames is the average of two adjacent sampled frames
+        frame_scores[k][index[0]:index[-1]+1]=score_list_final
         frame_scores2.append([score_list_final,index[0],index[-1]])
 
     # joblib.dump(frame_scores, os.path.join(args.ckpt_root, args.exp_name,args.eval_root,
@@ -163,9 +162,7 @@ def evaluate(args, ckpt_path, testset_yuvroot,testset_mvroot,dataloader_test,bes
 if __name__ == '__main__':
     def create_argparser():
         defaults = dict(
-            # model settings
             motion_channels = 2,  # MV data channel
-            # motion_channels = 8,  # 4 MV
             sampled_mv_num = 3,  # the num of sampled mv in one GOP
             ImgChnNum =  1, # channel of I frame UCSD
             # ImgChnNum =  3, # channel of I frame AVe
@@ -177,25 +174,19 @@ if __name__ == '__main__':
 
             # exp settings
             dataset_base_dir =  "/home/Dataset/UCSD_ped/UCSD_ped2",  # UCSD_ped2
-            # dataset_base_dir =  "/home/Dataset/Avenue",  # Avenue
             gt_dir = "data",
 
             ckpt_root = "mv_ckpt",
             log_root = "log",
 
             dataset_name = "UCSD_ped2",
-            exp_name =  "UCSD_ped2_mv_recon_stack_mv_eval3_123456",  # MV stack
-            # exp_name =  "UCSD_ped2_mv_recon",  # MV plus
-            # exp_name = "UCSD_ped2_mv_recon_stack_mvtruetest_4gpu_lr0.005",  # MV stack
-            # dataset_name = "avenue",
-            # exp_name = "avenue_mv_recon_eval_123456",  # MV stack
+            exp_name =  "UCSD_ped2_eval",  # MV stack
 
             eval_root = "eval",
             device_ids = "1,2,3,4",
             seed = 123456,
 
             pretrained =  False,
-            # pretrained = "/home/VADiffusion/mv_ckpt/UCSD_ped2_mv_recon_stack2/stackbest.pth",
             model_savename = "mv_model",
 
             logevery = 100 , # num of iterations to log
@@ -213,21 +204,18 @@ if __name__ == '__main__':
 
     args = create_argparser().parse_args()
 
-    os.environ['PYTHONHASHSEED'] = str(args.seed)  # 为了禁止hash随机化，使得实验可复现。
-    torch.manual_seed(args.seed)     # 为CPU设置随机种子
-    torch.cuda.manual_seed_all(args.seed)   # 为所有GPU设置随机种子（多块GPU）
+    os.environ['PYTHONHASHSEED'] = str(args.seed)
+    torch.manual_seed(args.seed)  
+    torch.cuda.manual_seed_all(args.seed) 
     # np.random.seed(seed)  # Numpy module.
     # random.seed(seed)  # Python random module.
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
     best_auc = -1
-    model_save_path = "/home/VADiffusion/mv_ckpt/UCSD_ped2_mv_recon_stack_mv_123456/stackbest.pth"
+    model_save_path = "/home/VADiffusion/mv_ckpt/UCSD_ped2_mv_recon_stack_mv_114514/stackbest.pth"
     testset_yuvroot=os.path.join(args.dataset_base_dir,  "test_recyuv400/")
     testset_mvroot=os.path.join(args.dataset_base_dir,  "testmv_txt/")
-
-    # testset_yuvroot = os.path.join(args.dataset_base_dir, "test19_recyuv/")
-    # testset_mvroot = os.path.join(args.dataset_base_dir,  "testmv_txt/")
 
     dataset_test = VideoDataset(args.ImgChnNum, args.sampled_mv_num, testset_yuvroot, testset_mvroot, last_mv=True)
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=128, num_workers=args.num_workers, shuffle=False)
