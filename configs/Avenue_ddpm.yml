@@ -1,0 +1,103 @@
+training:
+  L1: false
+  loss_type: eps  # min_snr_gamma_eps/x0/x0+g/
+  batch_size: 4
+  n_epochs: 10000
+  n_iters: 10001
+  save_freq: 1000  # 500
+  val_step: 1000  # 500
+  val_freq: 1000  # 500
+  log_freq: 100
+  log_all_sigmas: false
+
+eval:
+  wr: 0.1 #0.1 
+  wp: 0.9
+  gt_dir: ./data
+  batch_size: 128  # 128
+  early_end: 5 # 10
+
+sampling:
+  final_only: true
+  denoise: true
+  subsample: 100
+  step_lr: 0.0
+  n_steps_each: 0
+  clip_before: true
+
+test:
+  begin_ckpt: 1000
+  end_ckpt: 10001
+  batch_size: 128
+  freq: 1000
+  ckpt_path: /home/VADiffusion_v1/exp1/logs_avenue_train19_DDPM100
+  ckpt: 
+
+data:
+  dataset: "avenue"  # "shanghaitech" # kuaku s2t
+  image_size: 256
+  # channels: 1
+  num_workers: 8
+  num_digits: 2
+  step_length: 0.1
+  num_frames: 4
+  num_frames_cond: 4
+  num_frames_future: 0
+  prob_mask_cond: 0.0
+  prob_mask_future: 0.0
+  prob_mask_sync: false
+
+model:
+  ImgChnNum: 3
+  sampled_mv_num : 3
+  clip_hist: 4
+  clip_pred: 1
+  feature_root: 16
+  skip_ops: [ "none", "none", "none","none"]
+  motion_channels: 2
+  recon_MV_pretrained: /home/VADiffusion_v1/AMVbest.pth
+  depth: deep
+  version: DDPM  # DDIM
+  gamma: false   
+  arch: unetmore
+  type: v1
+  time_conditional: true
+  dropout: 0.1
+  sigma_dist: linear
+  sigma_begin: 0.02
+  sigma_end: 0.0001
+  num_classes: 1000
+  ema: true
+  ema_rate: 0.999
+  spec_norm: false
+  normalization: InstanceNorm++
+  nonlinearity: swish
+  ngf: 16  # 64
+  ch_mult:   # [1,2,3,4,4,4]
+    - 1
+    - 2
+    - 3
+    - 4
+  num_res_blocks: 2 # 8 for traditional
+  attn_resolutions: 
+    - 8
+    - 16
+    - 32 # can use only 16 for traditional
+  n_head_channels: 16 # -1 for traditional  64 32
+  conditional: true
+  noise_in_cond: false
+  output_all_frames: false # could be useful especially for 3d models
+  cond_emb: false
+  spade: false  
+  spade_dim: 128
+  pretrained: None
+
+optim:
+  weight_decay: 0.000
+  optimizer: "Adam"
+  lr: 0.00005
+  warmup: 1000
+  beta1: 0.9
+  amsgrad: false
+  eps: 0.00000001
+  grad_clip: 1.0

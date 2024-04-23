@@ -1,0 +1,103 @@
+training:
+  L1: false
+  loss_type: eps  # eps/min_snr_gamma_eps/min_snr_gamma_x0/x0/x0+g/
+  batch_size: 8
+  n_epochs: 10000
+  n_iters: 15001
+  save_freq: 500
+  val_step: 500
+  val_freq: 500
+  log_freq: 100
+  log_all_sigmas: false
+
+eval:
+  wr: 0.1
+  wp: 0.9
+  gt_dir: ./data
+  batch_size: 128
+  early_end: 10
+
+sampling:
+  final_only: true
+  denoise: true
+  subsample: 100 
+  step_lr: 0.0
+  n_steps_each: 0
+  clip_before: true
+
+test:
+  begin_ckpt: 500
+  end_ckpt: 5501
+  freq: 500
+  batch_size: 128
+  ckpt_path: 
+  ckpt: 
+
+data:
+  dataset: "UCSD_ped2"
+  image_size: 256
+  # channels: 1
+  num_workers: 8
+  num_digits: 2
+  step_length: 0.1
+  num_frames: 4
+  num_frames_cond: 4
+  num_frames_future: 0
+  prob_mask_cond: 0.0  # 0.5
+  prob_mask_future: 0.0
+  prob_mask_sync: false
+
+model:
+  ImgChnNum: 1
+  sampled_mv_num : 3
+  clip_hist: 4
+  clip_pred: 1
+  feature_root: 16
+  skip_ops: [ "none", "none", "none","none"]
+  motion_channels: 2
+  recon_MV_pretrained: /home/VADiffusion_v1/UMVbest.pth
+  depth: deep
+  version: DDPM  # DDIM/DDPM
+  gamma: false   
+  arch: unetmore
+  type: v1
+  time_conditional: true
+  dropout: 0.1
+  sigma_dist: linear
+  sigma_begin: 0.02
+  sigma_end: 0.0001
+  num_classes: 1000
+  ema: true
+  ema_rate: 0.999
+  spec_norm: false
+  normalization: InstanceNorm++
+  nonlinearity: swish
+  ngf: 16  # 64  doubling ngf approximately doubles the memory demand
+  ch_mult:   # [1,2,3,4,4,4]
+    - 1
+    - 2
+    - 3
+    - 4
+  num_res_blocks: 2 # 8 for traditional  number of sequential residual layers per block
+  attn_resolutions: 
+    - 8
+    - 16
+    - 32 # can use only 16 for traditional
+  n_head_channels: 32 # -1 for traditional  64  doubling n_heads_channels approximately doubles the memory demand
+  conditional: true
+  noise_in_cond: false
+  output_all_frames: false # could be useful especially for 3d models
+  cond_emb: false
+  spade: false  
+  spade_dim: 128
+  pretrained: /home/VADiffusion/exp1/logs_lossX_wp1_ddpm_residual/checkpoint_9000.pth
+
+optim:
+  weight_decay: 0.000
+  optimizer: "Adam"
+  lr: 0.0005
+  warmup: 1000   # warm up step
+  beta1: 0.9
+  amsgrad: false
+  eps: 0.00000001
+  grad_clip: 1.0
