@@ -180,7 +180,7 @@ if __name__ == '__main__':
             log_root = "log",
 
             dataset_name = "UCSD_ped2",
-            exp_name =  "UCSD_ped2_eval",  # MV stack
+            exp_name =  "UCSD_ped2_eval",
 
             eval_root = "eval",
             device_ids = "1,2,3,4",

@@ -20,7 +20,7 @@ from utils.ncsn_runner import NCSNRunner
 def parse_args_and_config():
     parser = argparse.ArgumentParser(description=globals()['__doc__'])
 
-    parser.add_argument('--config', type=str, default='/home/VADiffusion_v1/configs/Shanghaitech_ddpm.yml',  # Avenue_  UCSD_ped2_ Shanghaitech_
+    parser.add_argument('--config', type=str, default='/home/VADiffusion/configs/Shanghaitech_ddpm.yml',  # Avenue_  UCSD_ped2_ Shanghaitech_
                         help='Path to the config file')
     parser.add_argument('--data_path', type=str, default='/home/Dataset/shanghaitech',  # Avenue UCSD_ped/UCSD_ped2 shanghaitech
                         help='The basic Path to the dataset')

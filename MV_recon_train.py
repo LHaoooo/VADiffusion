@@ -206,8 +206,8 @@ def create_argparser():
         device_ids = "1",
         seed = 123456,
 
-        # pretrained =  False,
-        pretrained = "/home/VADiffusion/mv_ckpt/avenue_mv_recon_stack_mv_123456/stackbest.pth",
+        pretrained =  False,
+        # pretrained = "/home/VADiffusion/mv_ckpt/avenue_mv_recon_stack_mv_123456/stackbest.pth",
         model_savename = "mv_model",
 
         logevery = 100 , # num of iterations to log
