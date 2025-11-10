@@ -21,7 +21,7 @@ To set up the environment, please follow these steps:
 
 ```bash
 # 1. Clone the repository
-git clone [https://github.com/your_username/VADiffusion.git](https://github.com/your_username/VADiffusion.git)
+git clone https://github.com/LHaoooo/VADiffusion
 cd VADiffusion
 
 # 2. Create and activate the conda environment
