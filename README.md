@@ -2,8 +2,7 @@
 
 **Accepted by IEEE Transactions on Circuits and Systems for Video Technology (TCSVT)**
 
-[![Paper](https://img.shields.io/badge/Paper-IEEE_TCSVT-blue)]([https://ieeexplore.ieee.org/document/10480695])
-
+[![Paper](https://img.shields.io/badge/Paper-IEEE_TCSVT-blue)](https://ieeexplore.ieee.org/document/10480695)
 
 ## 📖 Overview
 
